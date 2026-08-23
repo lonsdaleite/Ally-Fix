@@ -34,7 +34,7 @@ export function StatusLine({ status, extra }: { status: FixStatus; extra?: strin
       bottomSeparator="none"
       description={description}
     >
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span style={{ display: "block", textAlign: "right", fontSize: "0.85em", opacity: 0.9 }}>
         <span
           style={{
             width: 9,
@@ -42,10 +42,11 @@ export function StatusLine({ status, extra }: { status: FixStatus; extra?: strin
             borderRadius: "50%",
             background: COLORS[status.state],
             display: "inline-block",
-            flexShrink: 0,
+            marginRight: 6,
+            verticalAlign: "middle",
           }}
         />
-        <span style={{ fontSize: "0.85em", opacity: 0.9, textAlign: "right" }}>{text}</span>
+        {text}
       </span>
     </Field>
   );
