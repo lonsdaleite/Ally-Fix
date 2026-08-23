@@ -75,6 +75,14 @@ class Plugin:
                     await fix.revert()
                 except Exception:  # noqa: BLE001
                     decky.logger.exception("[%s] revert on uninstall failed", fix.id)
+        # Enhanced Vibration is not a fix, but the flag persists in the controller —
+        # without the plugin there would be nothing left to turn it off with.
+        vib = self.fixes["vibration"]
+        if vib.enhanced and registry.device_supported() and vib.supported()[0]:
+            try:
+                await vib.set_enhanced(False)
+            except Exception:  # noqa: BLE001
+                decky.logger.exception("[vibration] enhanced off on uninstall failed")
 
     # --- events ----------------------------------------------------------
     async def _on_resume(self, slept: float):
@@ -145,6 +153,21 @@ class Plugin:
             await fix.reapply_if_enabled()
         st = await registry.status_of(fix)
         return {"ok": not fix.last_error, "error": fix.last_error, "status": st.to_dict()}
+
+    async def set_enhanced_vibration(self, enabled: bool) -> dict:
+        fix = self.fixes["vibration"]
+        if not registry.device_supported():
+            st = await registry.status_of(fix)
+            board = registry.dmi_board() or "unknown"
+            return {"ok": False, "error": f"Enhanced Vibration needs a ROG Xbox Ally (board {board})", "status": st.to_dict()}
+        try:
+            await fix.set_enhanced(bool(enabled))
+        except Exception as exc:  # noqa: BLE001
+            decky.logger.warning("[vibration] enhanced toggle failed: %s", exc)
+            st = await registry.status_of(fix)
+            return {"ok": False, "error": str(exc), "status": st.to_dict()}
+        st = await registry.status_of(fix)
+        return {"ok": True, "error": "", "status": st.to_dict()}
 
     async def test_vibration(self, duration_ms: int = 500) -> dict:
         try:

@@ -57,6 +57,7 @@ async def plugin_status(fixes: dict[str, Fix], version: str) -> dict[str, Any]:
                 "left": vib.intensity[0],  # type: ignore[attr-defined]
                 "right": vib.intensity[1],  # type: ignore[attr-defined]
                 "linked": vib.linked,  # type: ignore[attr-defined]
+                "enhanced": vib.enhanced,  # type: ignore[attr-defined]
             },
         },
     }

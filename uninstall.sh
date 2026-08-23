@@ -38,6 +38,22 @@ fi
 for f in /sys/module/hid_asus_ally/drivers/hid:asus_rog_ally/*/vibration_intensity; do
   [ -w "$f" ] && echo "64 64" > "$f" 2>/dev/null && echo "  - vibration intensity 64/64"
 done
+# Enhanced Vibration -> off (the flag persists inside the controller's MCU;
+# the command only exists on the ROG Xbox Ally / Ally X)
+case "$(cat /sys/class/dmi/id/board_name 2>/dev/null)" in
+  RC73XA|RC73YA)
+    python3 - 2>/dev/null <<'PY' && echo "  - enhanced vibration off"
+import fcntl, glob, os
+attr = glob.glob("/sys/module/hid_asus_ally/drivers/hid:asus_rog_ally/*/vibration_intensity")[0]
+node = sorted(glob.glob(os.path.join(os.path.dirname(attr), "hidraw", "hidraw*")))[0]
+buf = bytearray(64)
+buf[:5] = bytes([0x5A, 0xD1, 0x1F, 0x01, 0x00])
+fd = os.open("/dev/" + os.path.basename(node), os.O_RDWR)
+fcntl.ioctl(fd, 0xC0000000 | (64 << 16) | (ord("H") << 8) | 0x06, buf)
+os.close(fd)
+PY
+    ;;
+esac
 # Fan Noise Fix -> factory auto mode
 for d in /sys/class/hwmon/hwmon*; do
   if [ "$(cat "$d/name" 2>/dev/null)" = asus_custom_fan_curve ]; then

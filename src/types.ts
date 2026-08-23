@@ -20,6 +20,7 @@ export interface VibrationOptions {
   left: number;
   right: number;
   linked: boolean;
+  enhanced: boolean;
 }
 
 export interface PluginStatus {

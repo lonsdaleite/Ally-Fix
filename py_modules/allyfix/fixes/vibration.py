@@ -48,6 +48,9 @@ _FEATURE_REPORT_ID = 0x5A
 _XPAD_CONFIG = 0xD1
 _XPAD_CMD_SET_VIBE_INTENSITY = 0x06
 _XPAD_CMD_LEN_VIBE_INTENSITY = 0x02
+# "Use Xbox-recommended vibration waveform" (Armoury Crate's Enhanced Vibration),
+# boolean. The MCU stores the flag itself and it survives reboots and OS switches.
+_XPAD_CMD_SET_ENHANCED = 0x1F
 _FEATURE_REPORT_SIZE = 64
 _HIDIOCSFEATURE = 0xC0000000 | (_FEATURE_REPORT_SIZE << 16) | (ord("H") << 8) | 0x06
 _EV_FF = 0x15
@@ -124,6 +127,17 @@ class VibrationFix(Fix):
     def linked(self) -> bool:
         return bool(cfg.get(self.id, "linked", True))
 
+    @property
+    def enhanced(self) -> bool:
+        return bool(cfg.get(self.id, "enhanced", False))
+
+    async def set_enhanced(self, on: bool) -> None:
+        """Independent of the intensity fix and of `enabled`; the MCU keeps the
+        flag across reboots, so it is sent once on toggle and never re-applied."""
+        self._send_feature(_XPAD_CMD_SET_ENHANCED, bytes([1 if on else 0]))
+        cfg.update(self.id, {"enhanced": bool(on)})
+        decky.logger.info("[vibration] enhanced vibration %s", "on" if on else "off")
+
     def set_options(self, opts: dict[str, Any]) -> None:
         values: dict[str, Any] = {}
         if "linked" in opts:
@@ -182,12 +196,16 @@ class VibrationFix(Fix):
 
     @staticmethod
     def _write_mcu(left: int, right: int) -> None:
+        VibrationFix._send_feature(_XPAD_CMD_SET_VIBE_INTENSITY, bytes([left, right]))
+
+    @staticmethod
+    def _send_feature(cmd: int, data: bytes) -> None:
+        """Send `5A D1 <cmd> <len> <data…>` as a feature report on the config interface."""
         node = _hidraw_node()
         if node is None:
             raise OSError("hidraw node for the config interface not found")
         buf = bytearray(_FEATURE_REPORT_SIZE)
-        buf[:6] = bytes([_FEATURE_REPORT_ID, _XPAD_CONFIG, _XPAD_CMD_SET_VIBE_INTENSITY,
-                         _XPAD_CMD_LEN_VIBE_INTENSITY, left, right])
+        buf[: 4 + len(data)] = bytes([_FEATURE_REPORT_ID, _XPAD_CONFIG, cmd, len(data)]) + data
         fd = os.open(node, os.O_RDWR)
         try:
             fcntl.ioctl(fd, _HIDIOCSFEATURE, buf)
@@ -213,6 +231,7 @@ class VibrationFix(Fix):
             "left": left,
             "right": right,
             "linked": self.linked,
+            "enhanced": self.enhanced,
             "hw_left": hw[0] if hw else None,
             "hw_right": hw[1] if hw else None,
             "sysfs": _sysfs_path(),
@@ -266,9 +285,11 @@ class VibrationFix(Fix):
     # --- test rumble -----------------------------------------------------
     async def test(self, duration_ms: int = 500) -> None:
         """Fire a short FF_RUMBLE so the user can feel the current intensity."""
-        # Full FF magnitude on both motors: what the user feels is the sysfs scaling alone.
+        # 0xC800 goes out on the wire as magnitude 100 (/512) — the MCU's full scale,
+        # so what the user feels is the intensity scaling alone. 0xFFFF would be sent
+        # as 127, out of range, and buzzes audibly with Enhanced Vibration on.
         duration = max(100, min(2000, int(duration_ms)))
-        strong = weak = 0xFFFF
+        strong = weak = 100 * 512
         ff_path = _find_ff_device()
         if ff_path is None:
             raise OSError("no rumble-capable input device found")

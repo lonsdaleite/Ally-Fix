@@ -12,7 +12,12 @@ export function VibrationExtras({ options, status }: { options: VibrationOptions
   const hw = status.details as { hw_left?: number | null; hw_right?: number | null };
   // While the fix is off the sliders mirror what the hardware currently has and are read-only.
   const shown: VibrationOptions = off
-    ? { left: Math.min(100, hw.hw_left ?? 100), right: Math.min(100, hw.hw_right ?? 100), linked: (hw.hw_left ?? 100) === (hw.hw_right ?? 100) }
+    ? {
+        left: Math.min(100, hw.hw_left ?? 100),
+        right: Math.min(100, hw.hw_right ?? 100),
+        linked: (hw.hw_left ?? 100) === (hw.hw_right ?? 100),
+        enhanced: options.enhanced,
+      }
     : options;
   const [local, setLocal] = useState<VibrationOptions>(shown);
   const timer = useRef<number | undefined>(undefined);

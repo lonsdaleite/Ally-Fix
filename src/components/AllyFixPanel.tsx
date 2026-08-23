@@ -3,6 +3,7 @@ import { useQuickAccessVisible } from "@decky/api";
 import { useEffect } from "react";
 import { store, usePluginStatus } from "../store";
 import { CpuBoostExtras } from "./CpuBoostExtras";
+import { EnhancedVibrationRow } from "./EnhancedVibrationRow";
 import { FanExtras } from "./FanExtras";
 import { FixAllButton } from "./FixAllButton";
 import { FixCard } from "./FixCard";
@@ -60,7 +61,12 @@ export function AllyFixPanel() {
       <FixCard id="cpu_boost" status={f.cpu_boost} extra={cpuExtra}>
         <CpuBoostExtras options={status.options.cpu_boost} status={f.cpu_boost} />
       </FixCard>
-      <FixCard id="vibration" status={f.vibration} extra={vibExtra}>
+      <FixCard
+        id="vibration"
+        status={f.vibration}
+        extra={vibExtra}
+        preSettings={status.device_supported ? <EnhancedVibrationRow enhanced={vib.enhanced} /> : undefined}
+      >
         <VibrationExtras options={vib} status={f.vibration} />
       </FixCard>
       <FixCard id="fan" status={f.fan} extra={fanExtra}>

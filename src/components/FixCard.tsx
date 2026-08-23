@@ -11,11 +11,13 @@ export function FixCard({
   id,
   status,
   extra,
+  preSettings,
   children,
 }: {
   id: FixId;
   status: FixStatus;
   extra?: string;
+  preSettings?: ReactNode; // rendered above the Settings collapsible, not gated by Enable
   children?: ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
@@ -51,6 +53,7 @@ export function FixCard({
       <PanelSectionRow>
         <StatusLine status={status} extra={extra} />
       </PanelSectionRow>
+      {status.supported && preSettings}
       {children && status.supported && <Collapsible title="Settings">{children}</Collapsible>}
     </PanelSection>
   );
