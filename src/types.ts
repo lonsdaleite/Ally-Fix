@@ -64,3 +64,13 @@ export const FIX_LABELS: Record<FixId, { title: string; description: string }> =
     description: "Un-inverts gyro yaw in Steam Input (deck-uhid target) via an InputPlumber override.",
   },
 };
+
+export interface UpdateInfo {
+  ok: boolean;
+  error: string;
+  current: string;
+  latest?: string;
+  url?: string;
+  zip?: string;
+  update_available?: boolean;
+}

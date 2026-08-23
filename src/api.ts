@@ -5,6 +5,7 @@ import type {
   FixId,
   PluginStatus,
   SimpleResult,
+  UpdateInfo,
   VibrationOptions,
 } from "./types";
 
@@ -16,3 +17,5 @@ export const cpuCapRefreshNow = callable<[], SimpleResult>("cpu_cap_refresh_now"
 export const setVibrationOptions = callable<[opts: Partial<VibrationOptions>], ActionResult>("set_vibration_options");
 export const testVibration = callable<[duration_ms: number], SimpleResult>("test_vibration");
 export const fanRestoreFactoryCurve = callable<[], ActionResult>("fan_restore_factory_curve");
+export const checkUpdate = callable<[], UpdateInfo>("check_update");
+export const installUpdate = callable<[zip_url: string], SimpleResult>("install_update");

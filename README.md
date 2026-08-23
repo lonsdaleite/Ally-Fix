@@ -34,6 +34,9 @@ curl -fsSL https://raw.githubusercontent.com/lonsdaleite/Ally-Fix/main/install.s
 Or download the zip from the latest release and use
 *Decky → Settings → Developer → Install Plugin from ZIP*.
 
+Updates: the *Updates* section at the bottom of the panel checks GitHub Releases and installs a newer
+version in place (Decky restarts afterwards). Re-running the install command works too.
+
 ## Uninstallation
 
 Removing the plugin from Decky reverts every enabled fix. If that did not happen (the plugin was

@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(decky.DECKY_PLUGIN_DIR, "py_modules"))
 
 from allyfix import registry  # noqa: E402
 from allyfix import settings as cfg  # noqa: E402
+from allyfix import updater  # noqa: E402
 from allyfix.resume import ResumeDetector  # noqa: E402
 from allyfix.uevent import UeventMonitor  # noqa: E402
 
@@ -161,3 +162,11 @@ class Plugin:
             return {"ok": True, "error": "", "message": msg, "status": st.to_dict()}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
+
+    async def check_update(self) -> dict:
+        return await updater.check(self.version)
+
+    async def install_update(self, zip_url: str) -> dict:
+        if not zip_url.startswith("https://github.com/lonsdaleite/Ally-Fix/releases/download/"):
+            return {"ok": False, "error": "refusing to install from an unexpected URL"}
+        return await updater.install(zip_url)

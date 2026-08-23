@@ -8,6 +8,7 @@ import { FixAllButton } from "./FixAllButton";
 import { FixCard } from "./FixCard";
 import { GyroExtras } from "./GyroExtras";
 import { VibrationExtras } from "./VibrationExtras";
+import { UpdateRow } from "./UpdateRow";
 
 export function AllyFixPanel() {
   const status = usePluginStatus();
@@ -70,13 +71,7 @@ export function AllyFixPanel() {
       <FixCard id="gyro" status={f.gyro}>
         <GyroExtras status={f.gyro} />
       </FixCard>
-      <PanelSection>
-        <PanelSectionRow>
-          <div style={{ fontSize: "0.75em", opacity: 0.5, textAlign: "center" }}>
-            Ally Fix v{status.version} · {status.product || status.board}
-          </div>
-        </PanelSectionRow>
-      </PanelSection>
+      <UpdateRow version={status.version} device={status.product || status.board} />
     </>
   );
 }
