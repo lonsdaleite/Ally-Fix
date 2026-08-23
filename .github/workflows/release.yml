@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with the Decky builder image
+        run: |
+          mkdir -p out
+          docker run --rm --user "$(id -u):$(id -g)" -e RELEASE_TYPE=production \
+            -v "$PWD:/plugin" -v "$PWD/out:/out" ghcr.io/steamdeckhomebrew/builder:latest
+      - name: Package
+        run: |
+          NAME="$(python3 -c 'import json;print(json.load(open("plugin.json"))["name"])')"
+          rm -rf pkg && mkdir -p "pkg/$NAME"
+          cp -r out/dist out/py_modules out/main.py out/plugin.json out/package.json out/LICENSE out/README.md "pkg/$NAME/"
+          find pkg -name __pycache__ -type d -exec rm -rf {} + || true
+          (cd pkg && zip -r "../Ally-Fix-${GITHUB_REF_NAME}.zip" "$NAME")
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: Ally-Fix-*.zip
+          generate_release_notes: true

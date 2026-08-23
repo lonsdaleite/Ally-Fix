@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with the Decky builder image
+        run: |
+          mkdir -p out
+          docker run --rm --user "$(id -u):$(id -g)" -e RELEASE_TYPE=production \
+            -v "$PWD:/plugin" -v "$PWD/out:/out" ghcr.io/steamdeckhomebrew/builder:latest
+          test -f out/dist/index.js
+      - name: Check Python syntax
+        run: python3 -m py_compile main.py $(find py_modules -name '*.py')

@@ -1,0 +1,11 @@
+{
+  "name": "Ally Fix",
+  "author": "lonsdaleite",
+  "flags": ["root"],
+  "api_version": 1,
+  "publish": {
+    "tags": ["utilities", "hardware", "rog-ally", "root"],
+    "description": "One-click fixes for the ROG Xbox Ally X on SteamOS: CPU boost, vibration intensity, fan noise after resume and gyro yaw.",
+    "image": "https://raw.githubusercontent.com/lonsdaleite/Ally-Fix/main/assets/preview.png"
+  }
+}
