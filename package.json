@@ -1,6 +1,6 @@
 {
   "name": "ally-fix",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "One-click fixes for the ROG Xbox Ally X on SteamOS",
   "type": "module",
   "scripts": {
