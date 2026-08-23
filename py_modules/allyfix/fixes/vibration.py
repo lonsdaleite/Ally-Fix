@@ -1,18 +1,21 @@
 """Vibration Fix: lower grip-motor vibration intensity and keep it applied.
 
-The hid_asus_ally driver exposes `vibration_intensity` ("LEFT RIGHT"). The
-store handler accepts 0..64 (checked against the 6.16 module); the driver's
-initial readback is a placeholder 100/100 that was never sent to the MCU, so a
-fresh boot reports 100/100 while the motors run at the firmware default
-(full strength). The value is lost whenever the device re-enumerates
-(suspend/resume), so we re-write it when the HID device (re)binds and after
-resume. Trigger (impulse) vibration is a separate hardware path the kernel
-does not expose.
+The MCU takes intensity as a percentage 0..100 per motor (firmware default
+100/100). We write the hid_asus_ally sysfs attribute `vibration_intensity`;
+its store handler currently rejects anything above 64 with EINVAL (a
+decimal/hex slip: the driver's own init value is 0x64 = 100). On that error we
+fall back to writing 64 into sysfs (so the kernel's copy stays as close as it
+can get) and then send the real value ourselves with the same MCU command the
+driver uses, as a feature report on the config interface's hidraw node. sysfs
+cannot report a value above 64, so after a fallback we remember what we sent
+and forget it whenever the device re-enumerates (suspend/resume, driver
+rebind), at which point the MCU is back at its default and we re-apply.
 """
 
 from __future__ import annotations
 
 import asyncio
+import errno
 import fcntl
 import glob
 import os
@@ -28,7 +31,8 @@ from ..sysfs import read_str, write_str
 
 DRIVER_GLOB = "/sys/module/hid_asus_ally/drivers/hid:asus_rog_ally/*/vibration_intensity"
 HIDRAW_GLOB = "/sys/class/hidraw/*/device/vibration_intensity"
-MAX_INTENSITY = 64
+MAX_INTENSITY = 100
+SYSFS_MAX = 64  # kernel store handler limit
 FACTORY = (MAX_INTENSITY, MAX_INTENSITY)
 DEFAULT = (50, 50)
 REBIND_RETRIES = 5
@@ -38,6 +42,14 @@ REBIND_RETRY_DELAY_S = 1.0
 _EVIOCGBIT_FF = 0x80204535
 _EVIOCSFF = 0x40304580
 _EVIOCRMFF = 0x40044581
+# MCU config command, same as hid-asus-ally.h: report 0x5A, xpad config class 0xD1,
+# xpad_cmd_set_vibe_intensity, xpad_cmd_len_vibe_intensity, then LEFT RIGHT.
+_FEATURE_REPORT_ID = 0x5A
+_XPAD_CONFIG = 0xD1
+_XPAD_CMD_SET_VIBE_INTENSITY = 0x06
+_XPAD_CMD_LEN_VIBE_INTENSITY = 0x02
+_FEATURE_REPORT_SIZE = 64
+_HIDIOCSFEATURE = 0xC0000000 | (_FEATURE_REPORT_SIZE << 16) | (ord("H") << 8) | 0x06
 _EV_FF = 0x15
 _FF_RUMBLE = 0x50
 
@@ -54,6 +66,16 @@ def _sysfs_path() -> str | None:
         found = sorted(glob.glob(pattern))
         if found:
             return found[0]
+    return None
+
+
+def _hidraw_node() -> str | None:
+    """/dev/hidrawN of the config interface that owns the sysfs attribute."""
+    attr = _sysfs_path()
+    if attr is None:
+        return None
+    for node in sorted(glob.glob(os.path.join(os.path.dirname(attr), "hidraw", "hidraw*"))):
+        return "/dev/" + os.path.basename(node)
     return None
 
 
@@ -91,6 +113,7 @@ class VibrationFix(Fix):
         super().__init__()
         self._uevent = None  # set by plugin
         self._rebind_task: asyncio.Task | None = None
+        self._hw: tuple[int, int] | None = None  # value sent via hidraw fallback (sysfs can't show it)
 
     # --- options -------------------------------------------------------
     @property
@@ -125,6 +148,9 @@ class VibrationFix(Fix):
         return True, ""
 
     def _read_hw(self) -> tuple[int, int] | None:
+        if self._hw is not None:
+            return self._hw
+        # Fresh boot / re-enumeration: the driver's placeholder 100/100 matches the MCU default.
         path = _sysfs_path()
         if path is None:
             return None
@@ -141,7 +167,32 @@ class VibrationFix(Fix):
         path = _sysfs_path()
         if path is None:
             raise OSError("vibration_intensity sysfs attribute not found")
-        write_str(path, f"{left} {right}\n")
+        try:
+            write_str(path, f"{left} {right}\n")
+        except OSError as exc:
+            if exc.errno != errno.EINVAL or (left <= SYSFS_MAX and right <= SYSFS_MAX):
+                raise
+        else:
+            self._hw = None  # sysfs is authoritative again
+            return
+        # Kernel refused (>64): keep its copy as close as it allows, then send the real value ourselves.
+        write_str(path, f"{min(left, SYSFS_MAX)} {min(right, SYSFS_MAX)}\n")
+        self._write_mcu(left, right)
+        self._hw = (left, right)
+
+    @staticmethod
+    def _write_mcu(left: int, right: int) -> None:
+        node = _hidraw_node()
+        if node is None:
+            raise OSError("hidraw node for the config interface not found")
+        buf = bytearray(_FEATURE_REPORT_SIZE)
+        buf[:6] = bytes([_FEATURE_REPORT_ID, _XPAD_CONFIG, _XPAD_CMD_SET_VIBE_INTENSITY,
+                         _XPAD_CMD_LEN_VIBE_INTENSITY, left, right])
+        fd = os.open(node, os.O_RDWR)
+        try:
+            fcntl.ioctl(fd, _HIDIOCSFEATURE, buf)
+        finally:
+            os.close(fd)
 
     def is_applied(self) -> bool:
         return self._read_hw() == self.intensity
@@ -168,6 +219,7 @@ class VibrationFix(Fix):
         }
 
     async def on_resume(self) -> None:
+        self._hw = None
         self._schedule_rebind("resume")
 
     async def start_background(self) -> None:
@@ -187,6 +239,7 @@ class VibrationFix(Fix):
             return
         if "asus" not in event.get("DRIVER", "").lower() and "0B05" not in event.get("HID_ID", "").upper():
             return
+        self._hw = None
         self._schedule_rebind(f"hid {event.get('ACTION')}")
 
     def _schedule_rebind(self, reason: str) -> None:

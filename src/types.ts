@@ -53,7 +53,7 @@ export const FIX_LABELS: Record<FixId, { title: string; description: string }> =
   },
   vibration: {
     title: "Vibration Fix",
-    description: "Lowers grip-motor vibration intensity (default 50 of 64) and re-applies it after sleep.",
+    description: "Lowers grip-motor vibration intensity (default 50 %) and re-applies it after sleep.",
   },
   fan: {
     title: "Fan Noise Fix",

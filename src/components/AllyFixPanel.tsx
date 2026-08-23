@@ -36,11 +36,9 @@ export function AllyFixPanel() {
   const hw = f.vibration.details as { hw_left?: number | null; hw_right?: number | null };
   const vibExtra =
     hw.hw_left != null && hw.hw_right != null
-      ? hw.hw_left > 64
-        ? "firmware default"
-        : hw.hw_left === hw.hw_right
-          ? `now ${hw.hw_left}`
-          : `now ${hw.hw_left}/${hw.hw_right}`
+      ? hw.hw_left === hw.hw_right
+        ? `now ${hw.hw_left}`
+        : `now ${hw.hw_left}/${hw.hw_right}`
       : undefined;
   const fanExtra = (f.fan.details as { profile?: string }).profile;
   const cpuExtra = f.cpu_boost.enabled && !status.options.cpu_boost.refresh_on_charger ? "charger refresh off" : undefined;

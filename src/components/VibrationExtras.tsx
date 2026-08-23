@@ -12,7 +12,7 @@ export function VibrationExtras({ options, status }: { options: VibrationOptions
   const hw = status.details as { hw_left?: number | null; hw_right?: number | null };
   // While the fix is off the sliders mirror what the hardware currently has and are read-only.
   const shown: VibrationOptions = off
-    ? { left: Math.min(64, hw.hw_left ?? 64), right: Math.min(64, hw.hw_right ?? 64), linked: (hw.hw_left ?? 64) === (hw.hw_right ?? 64) }
+    ? { left: Math.min(100, hw.hw_left ?? 100), right: Math.min(100, hw.hw_right ?? 100), linked: (hw.hw_left ?? 100) === (hw.hw_right ?? 100) }
     : options;
   const [local, setLocal] = useState<VibrationOptions>(shown);
   const timer = useRef<number | undefined>(undefined);
@@ -59,7 +59,7 @@ export function VibrationExtras({ options, status }: { options: VibrationOptions
           value={local.left}
           disabled={off}
           min={0}
-          max={64}
+          max={100}
           step={1}
           showValue
           onChange={(left) => push({ ...local, left, right: local.linked ? left : local.right })}
@@ -72,7 +72,7 @@ export function VibrationExtras({ options, status }: { options: VibrationOptions
             value={local.right}
             disabled={off}
             min={0}
-            max={64}
+            max={100}
             step={1}
             showValue
             onChange={(right) => push({ ...local, right })}
@@ -86,7 +86,7 @@ export function VibrationExtras({ options, status }: { options: VibrationOptions
       </PanelSectionRow>
       <PanelSectionRow>
         <div style={{ fontSize: "0.8em", opacity: 0.7 }}>
-          Turning the fix on sets 50/50; turning it off sets 64/64, the firmware default (the 100/100 shown right after boot is a driver placeholder). Grip motors only; trigger (impulse) vibration is not controllable by the kernel driver.
+          Motor strength in percent, written straight to the controller. Turning the fix on sets 50/50; turning it off restores the firmware default 100/100. Grip motors only.
         </div>
       </PanelSectionRow>
     </>
