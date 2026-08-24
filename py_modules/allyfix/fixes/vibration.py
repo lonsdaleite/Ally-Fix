@@ -1,21 +1,28 @@
 """Vibration Fix: lower grip-motor vibration intensity and keep it applied.
 
 The MCU takes intensity as a percentage 0..100 per motor (firmware default
-100/100). We write the hid_asus_ally sysfs attribute `vibration_intensity`;
-its store handler currently rejects anything above 64 with EINVAL (a
-decimal/hex slip: the driver's own init value is 0x64 = 100). On that error we
-fall back to writing 64 into sysfs (so the kernel's copy stays as close as it
-can get) and then send the real value ourselves with the same MCU command the
-driver uses, as a feature report on the config interface's hidraw node. sysfs
-cannot report a value above 64, so after a fallback we remember what we sent
-and forget it whenever the device re-enumerates (suspend/resume, driver
-rebind), at which point the MCU is back at its default and we re-apply.
+100/100), via feature report `5A D1 06` on the config interface — the same
+command the hid_asus_ally driver uses. We send it there directly. The driver's
+sysfs attribute caps values at 64 (a decimal/hex slip: its own init value is
+0x64 = 100) and its store handler synchronously forwards its copy to the MCU,
+so the sysfs mirror is written first (full value; capped to 64 only if the
+kernel still rejects it) and the real value goes out last and wins. The MCU echoes the last accepted
+command back through a GET of the same feature report, which confirms
+delivery; concurrent rumble traffic (0x0D) shares that echo, so an
+unconfirmed send is retried.
+
+The controller is reset by suspend (a `usb 1-4: reset` on resume — seen after
+naps of a few seconds as well as after hours; warm reboots keep it), which
+resets both the intensity and the Enhanced Vibration flag, and it can come
+back at an unpredictable moment after resume — so on resume the settings are
+re-sent as a spaced series of idempotent writes, not a single shot. That reset
+raises no hid uevents (same device, no re-enumeration), so detecting the
+resume itself is what triggers the series.
 """
 
 from __future__ import annotations
 
 import asyncio
-import errno
 import fcntl
 import glob
 import os
@@ -35,8 +42,7 @@ MAX_INTENSITY = 100
 SYSFS_MAX = 64  # kernel store handler limit
 FACTORY = (MAX_INTENSITY, MAX_INTENSITY)
 DEFAULT = (50, 50)
-REBIND_RETRIES = 5
-REBIND_RETRY_DELAY_S = 1.0
+REBIND_DELAYS_S = (1.0, 2.0, 3.0, 4.0, 5.0)  # cumulative ~1/3/6/10/15s after the trigger
 
 # evdev force feedback (for the test rumble)
 _EVIOCGBIT_FF = 0x80204535
@@ -49,10 +55,12 @@ _XPAD_CONFIG = 0xD1
 _XPAD_CMD_SET_VIBE_INTENSITY = 0x06
 _XPAD_CMD_LEN_VIBE_INTENSITY = 0x02
 # "Use Xbox-recommended vibration waveform" (Armoury Crate's Enhanced Vibration),
-# boolean. The MCU stores the flag itself and it survives reboots and OS switches.
+# boolean. Kept by the MCU across warm reboots and OS switches, lost with the suspend reset.
 _XPAD_CMD_SET_ENHANCED = 0x1F
 _FEATURE_REPORT_SIZE = 64
 _HIDIOCSFEATURE = 0xC0000000 | (_FEATURE_REPORT_SIZE << 16) | (ord("H") << 8) | 0x06
+_HIDIOCGFEATURE = 0xC0000000 | (_FEATURE_REPORT_SIZE << 16) | (ord("H") << 8) | 0x07
+_ECHO_TRIES = 3
 _EV_FF = 0x15
 _FF_RUMBLE = 0x50
 
@@ -116,7 +124,7 @@ class VibrationFix(Fix):
         super().__init__()
         self._uevent = None  # set by plugin
         self._rebind_task: asyncio.Task | None = None
-        self._hw: tuple[int, int] | None = None  # value sent via hidraw fallback (sysfs can't show it)
+        self._hw: tuple[int, int] | None = None  # last value sent to the MCU (sysfs holds only the capped mirror)
 
     # --- options -------------------------------------------------------
     @property
@@ -132,11 +140,21 @@ class VibrationFix(Fix):
         return bool(cfg.get(self.id, "enhanced", False))
 
     async def set_enhanced(self, on: bool) -> None:
-        """Independent of the intensity fix and of `enabled`; the MCU keeps the
-        flag across reboots, so it is sent once on toggle and never re-applied."""
-        self._send_feature(_XPAD_CMD_SET_ENHANCED, bytes([1 if on else 0]))
+        """Independent of the intensity fix and of `enabled`. The MCU keeps the
+        flag only until the suspend reset (it survives warm reboots, not sleep),
+        so an enabled flag is re-sent on start/resume/rebind. A disabled flag is
+        never pushed automatically — only here and on uninstall — so a value set
+        from Windows is left alone."""
+        confirmed = self._send_feature(_XPAD_CMD_SET_ENHANCED, bytes([1 if on else 0]))
         cfg.update(self.id, {"enhanced": bool(on)})
-        decky.logger.info("[vibration] enhanced vibration %s", "on" if on else "off")
+        decky.logger.info("[vibration] enhanced vibration %s%s",
+                          "on" if on else "off", "" if confirmed else " (echo unconfirmed)")
+
+    def _resend_enhanced(self) -> None:
+        if not self.enhanced:
+            return
+        if not self._send_feature(_XPAD_CMD_SET_ENHANCED, b"\x01"):
+            decky.logger.warning("[vibration] enhanced re-send, echo unconfirmed")
 
     def set_options(self, opts: dict[str, Any]) -> None:
         values: dict[str, Any] = {}
@@ -178,39 +196,57 @@ class VibrationFix(Fix):
             return None
 
     def _write_hw(self, left: int, right: int) -> None:
+        # sysfs first: the driver's store synchronously forwards its (capped) copy
+        # to the MCU, so our direct write below must come last to win.
         path = _sysfs_path()
         if path is None:
             raise OSError("vibration_intensity sysfs attribute not found")
         try:
             write_str(path, f"{left} {right}\n")
         except OSError as exc:
-            if exc.errno != errno.EINVAL or (left <= SYSFS_MAX and right <= SYSFS_MAX):
-                raise
-        else:
-            self._hw = None  # sysfs is authoritative again
-            return
-        # Kernel refused (>64): keep its copy as close as it allows, then send the real value ourselves.
-        write_str(path, f"{min(left, SYSFS_MAX)} {min(right, SYSFS_MAX)}\n")
-        self._write_mcu(left, right)
+            capped = (min(left, SYSFS_MAX), min(right, SYSFS_MAX))
+            if capped == (left, right):
+                decky.logger.warning("[vibration] sysfs mirror write failed: %s", exc)
+            else:
+                # kernel store still has the `> 64` slip — mirror what it allows
+                try:
+                    write_str(path, "%d %d\n" % capped)
+                except OSError as exc2:
+                    decky.logger.warning("[vibration] sysfs mirror write failed: %s", exc2)
+        confirmed = self._send_feature(_XPAD_CMD_SET_VIBE_INTENSITY, bytes([left, right]))
         self._hw = (left, right)
+        if not confirmed:
+            decky.logger.warning("[vibration] intensity %d/%d sent, echo unconfirmed", left, right)
 
     @staticmethod
-    def _write_mcu(left: int, right: int) -> None:
-        VibrationFix._send_feature(_XPAD_CMD_SET_VIBE_INTENSITY, bytes([left, right]))
-
-    @staticmethod
-    def _send_feature(cmd: int, data: bytes) -> None:
-        """Send `5A D1 <cmd> <len> <data…>` as a feature report on the config interface."""
+    def _send_feature(cmd: int, data: bytes) -> bool:
+        """Send `5A D1 <cmd> <len> <data…>` as a feature report on the config
+        interface and confirm delivery: the MCU echoes the last accepted command
+        back through a GET of the same report. Rumble traffic (0x0D) shares the
+        echo and can clobber it between our SET and GET, hence a few tries.
+        Returns whether the echo confirmed the command; the send itself raises
+        OSError on failure."""
         node = _hidraw_node()
         if node is None:
             raise OSError("hidraw node for the config interface not found")
-        buf = bytearray(_FEATURE_REPORT_SIZE)
-        buf[: 4 + len(data)] = bytes([_FEATURE_REPORT_ID, _XPAD_CONFIG, cmd, len(data)]) + data
+        packet = bytes([_FEATURE_REPORT_ID, _XPAD_CONFIG, cmd, len(data)]) + data
         fd = os.open(node, os.O_RDWR)
         try:
-            fcntl.ioctl(fd, _HIDIOCSFEATURE, buf)
+            for _ in range(_ECHO_TRIES):
+                buf = bytearray(_FEATURE_REPORT_SIZE)
+                buf[: len(packet)] = packet
+                fcntl.ioctl(fd, _HIDIOCSFEATURE, buf)
+                echo = bytearray(_FEATURE_REPORT_SIZE)
+                echo[0] = _FEATURE_REPORT_ID
+                try:
+                    fcntl.ioctl(fd, _HIDIOCGFEATURE, echo)
+                except OSError:
+                    return False  # echo unreadable; the SET itself went through
+                if bytes(echo[: len(packet)]) == packet:
+                    return True
         finally:
             os.close(fd)
+        return False
 
     def is_applied(self) -> bool:
         return self._read_hw() == self.intensity
@@ -237,6 +273,17 @@ class VibrationFix(Fix):
             "sysfs": _sysfs_path(),
         }
 
+    def needs_resume(self) -> bool:
+        return self.enabled or self.enhanced
+
+    async def reapply_if_enabled(self) -> None:
+        await super().reapply_if_enabled()
+        if self.enhanced and self.supported()[0]:
+            try:
+                self._resend_enhanced()
+            except OSError as exc:
+                decky.logger.warning("[vibration] enhanced re-send failed: %s", exc)
+
     async def on_resume(self) -> None:
         self._hw = None
         self._schedule_rebind("resume")
@@ -252,7 +299,7 @@ class VibrationFix(Fix):
         self._rebind_task = None
 
     async def _on_hid_event(self, event: dict[str, str]) -> None:
-        if not self.enabled:
+        if not (self.enabled or self.enhanced):
             return
         if event.get("ACTION") not in ("add", "bind"):
             return
@@ -267,19 +314,34 @@ class VibrationFix(Fix):
         self._rebind_task = asyncio.get_running_loop().create_task(self._rebind(reason))
 
     async def _rebind(self, reason: str) -> None:
-        for attempt in range(1, REBIND_RETRIES + 1):
-            await asyncio.sleep(REBIND_RETRY_DELAY_S)
-            if not self.enabled:
+        """The controller can reset at an unpredictable moment after resume (its
+        power comes back late), so a single write is not enough: send the whole
+        spaced series unconditionally — the writes are idempotent, and the last
+        one lands well after the controller has settled."""
+        sent = failed = 0
+        for delay in REBIND_DELAYS_S:
+            await asyncio.sleep(delay)
+            if not (self.enabled or self.enhanced):
                 return
             try:
-                await self.apply()
-                self.last_error = ""
-                decky.logger.info("[vibration] re-applied after %s (attempt %d)", reason, attempt)
-                await self.notify()
-                return
+                if self.enabled:
+                    self._write_hw(*self.intensity)
+                self._resend_enhanced()
+                sent += 1
             except OSError as exc:
-                decky.logger.warning("[vibration] re-apply attempt %d failed: %s", attempt, exc)
-        self.last_error = "could not re-apply vibration intensity after device re-enumeration"
+                failed += 1
+                decky.logger.warning("[vibration] re-apply after %s failed: %s", reason, exc)
+        if sent:
+            self.last_error = ""
+            parts = []
+            if self.enabled:
+                parts.append("intensity %d/%d" % self.intensity)
+            if self.enhanced:
+                parts.append("enhanced on")
+            decky.logger.info("[vibration] re-applied after %s: %s (%d/%d sends ok)",
+                              reason, ", ".join(parts), sent, sent + failed)
+        else:
+            self.last_error = f"could not re-apply vibration settings after {reason}"
         await self.notify()
 
     # --- test rumble -----------------------------------------------------
@@ -313,4 +375,4 @@ class VibrationFix(Fix):
             fcntl.ioctl(fd, _EVIOCRMFF, effect_id)
         finally:
             os.close(fd)
-        decky.logger.info("[vibration] test rumble %dms via %s (sysfs %s)", duration, ff_path, self._read_hw())
+        decky.logger.info("[vibration] test rumble %dms via %s (hw %s)", duration, ff_path, self._read_hw())

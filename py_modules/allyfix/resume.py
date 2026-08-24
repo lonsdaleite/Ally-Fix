@@ -13,7 +13,7 @@ from typing import Awaitable, Callable
 import decky
 
 _POLL_S = 1.0
-_THRESHOLD_S = 2.0
+_THRESHOLD_S = 0.2  # the delta only moves during suspend, so any jump is a resume
 
 
 class ResumeDetector:

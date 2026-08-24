@@ -87,7 +87,7 @@ class Plugin:
     # --- events ----------------------------------------------------------
     async def _on_resume(self, slept: float):
         for fix in self.fixes.values():
-            if fix.enabled and fix.supported()[0]:
+            if fix.needs_resume() and fix.supported()[0]:
                 try:
                     await fix.on_resume()
                 except Exception:  # noqa: BLE001

@@ -88,8 +88,12 @@ class Fix:
     async def stop_background(self) -> None:
         """Called at plugin unload."""
 
+    def needs_resume(self) -> bool:
+        """Whether on_resume should be called for this fix."""
+        return self.enabled
+
     async def on_resume(self) -> None:
-        """Called after the system wakes from suspend (only if enabled)."""
+        """Called after the system wakes from suspend (if needs_resume())."""
 
     # --- helpers --------------------------------------------------------
     def status(self) -> FixStatus:
