@@ -14,7 +14,8 @@ export function UpdateRow({ version, device }: { version: string; device: string
       const res = await checkUpdate();
       setInfo(res);
       if (!res.ok) toaster.toast({ title: "Ally Fix", body: res.error });
-      else if (!res.update_available) toaster.toast({ title: "Ally Fix", body: `v${version} is the latest version` });
+      else if (res.update_available) toaster.toast({ title: "Ally Fix", body: `v${res.latest} is available` });
+      else toaster.toast({ title: "Ally Fix", body: `v${version} is the latest version` });
     } finally {
       setBusy(false);
     }

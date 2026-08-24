@@ -52,7 +52,7 @@ export function AllyFixPanel() {
           <PanelSectionRow>
             <Field
               label="Unsupported device"
-              description={`These fixes are made for the ROG Xbox Ally X (board ${status.board || "unknown"}). Use at your own risk.`}
+              description="Made for the ROG Xbox Ally X. Use at your own risk."
               focusable={false}
             />
           </PanelSectionRow>

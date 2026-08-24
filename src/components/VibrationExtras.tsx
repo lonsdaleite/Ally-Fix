@@ -87,12 +87,12 @@ export function VibrationExtras({ options, status }: { options: VibrationOptions
       )}
       <PanelSectionRow>
         <ButtonItem layout="below" onClick={onTest}>
-          Test vibration (0.5 s)
+          Test rumble
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
         <div style={{ fontSize: "0.8em", opacity: 0.7 }}>
-          Motor strength in percent, written straight to the controller. Turning the fix on sets 50/50; turning it off restores the firmware default 100/100. Grip motors only.
+          On = 50 %, off = 100 %.
         </div>
       </PanelSectionRow>
     </>

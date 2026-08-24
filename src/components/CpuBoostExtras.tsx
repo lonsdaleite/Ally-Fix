@@ -5,7 +5,6 @@ import { store } from "../store";
 import type { CpuBoostOptions, FixStatus } from "../types";
 
 export function CpuBoostExtras({ options, status }: { options: CpuBoostOptions; status: FixStatus }) {
-  const d = status.details as { over_cap_cores?: number; policies?: number; kicks?: number };
   const onToggle = async (refresh_on_charger: boolean) => {
     const cur = store.get();
     if (cur) store.set({ ...cur, options: { ...cur.options, cpu_boost: { ...cur.options.cpu_boost, refresh_on_charger } } });
@@ -21,7 +20,7 @@ export function CpuBoostExtras({ options, status }: { options: CpuBoostOptions; 
       <PanelSectionRow>
         <ToggleField
           label="Refresh cap on charger events"
-          description="Re-applies the frequency cap when the charger is plugged or unplugged (the firmware drops it otherwise). Turning the fix on resets this to enabled."
+          description="Keep boost off when plugging the charger in or out."
           checked={status.enabled && options.refresh_on_charger}
           disabled={!status.enabled}
           onChange={onToggle}
@@ -29,13 +28,8 @@ export function CpuBoostExtras({ options, status }: { options: CpuBoostOptions; 
       </PanelSectionRow>
       <PanelSectionRow>
         <ButtonItem layout="below" disabled={!status.enabled} onClick={onRefresh}>
-          Refresh cap now
+          Apply now
         </ButtonItem>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <div style={{ fontSize: "0.8em", opacity: 0.7 }}>
-          Cores over cap: {d.over_cap_cores ?? "?"} / {d.policies ?? "?"} · kicks: {d.kicks ?? 0}
-        </div>
       </PanelSectionRow>
     </>
   );

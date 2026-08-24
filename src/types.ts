@@ -52,19 +52,19 @@ export interface SimpleResult {
 export const FIX_LABELS: Record<FixId, { title: string; description: string }> = {
   cpu_boost: {
     title: "CPU Boost Fix",
-    description: "Disables CPU boost and keeps the frequency cap applied after charger events.",
+    description: "Turns CPU boost off and keeps it off.",
   },
   vibration: {
     title: "Vibration Fix",
-    description: "Lowers grip-motor vibration intensity (default 50 %) and re-applies it after sleep.",
+    description: "Softer rumble (50 %).",
   },
   fan: {
     title: "Fan Noise Fix",
-    description: "Pins the current profile's fan curve so fans cannot get stuck at full speed after resume.",
+    description: "Stops the fans getting stuck at full speed after sleep.",
   },
   gyro: {
     title: "Gyro Fix",
-    description: "Un-inverts gyro yaw in Steam Input (deck-uhid target) via an InputPlumber override.",
+    description: "Fixes the gyro turning the wrong way in Steam Input.",
   },
 };
 

@@ -64,7 +64,7 @@ export function EnhancedVibrationRow({ enhanced }: { enhanced: boolean }) {
       flag="enhanced"
       checked={enhanced}
       label="Enhanced Vibration"
-      description="Xbox-recommended waveform (same as the Armoury Crate toggle). Stored in the controller, survives reboots. Independent of the fix above. Game rumble is capped at the controller's full scale while on, so full-strength rumble does not rattle."
+      description="Same as the toggle in Armoury Crate."
       call={setEnhancedVibration}
     />
   );
@@ -77,7 +77,7 @@ export function TriggerMirrorRow({ mirror }: { mirror: boolean }) {
       flag="mirror_triggers"
       checked={mirror}
       label="Mirror to triggers"
-      description="Mirror grip rumble onto the impulse triggers at the same strength (left grip → LT, right grip → RT). Works in every game; nothing is stored in the controller."
+      description="Triggers vibrate together with the grips."
       call={setTriggerMirror}
     />
   );
