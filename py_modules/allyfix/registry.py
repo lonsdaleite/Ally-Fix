@@ -7,6 +7,7 @@ from typing import Any
 import decky
 
 from .base import Fix, FixStatus
+from .device import SUPPORTED_BOARDS, device_supported, has_impulse_triggers  # noqa: F401
 from .fixes.cpu_boost import CpuBoostFix
 from .fixes.fan import FanFix
 from .fixes.gyro import GyroFix
@@ -14,11 +15,6 @@ from .fixes.vibration import VibrationFix
 from .sysfs import dmi_board, dmi_product
 
 FIX_ORDER = ("cpu_boost", "vibration", "fan", "gyro")
-SUPPORTED_BOARDS = ("RC73XA", "RC73YA")
-
-
-def device_supported() -> bool:
-    return dmi_board() in SUPPORTED_BOARDS
 
 
 def build() -> dict[str, Fix]:
@@ -50,6 +46,7 @@ async def plugin_status(fixes: dict[str, Fix], version: str) -> dict[str, Any]:
         "board": board,
         "product": dmi_product(),
         "device_supported": device_supported(),
+        "impulse_triggers": has_impulse_triggers(),
         "fixes": statuses,
         "options": {
             "cpu_boost": {"refresh_on_charger": cpu.refresh_on_charger},  # type: ignore[attr-defined]
@@ -58,6 +55,7 @@ async def plugin_status(fixes: dict[str, Fix], version: str) -> dict[str, Any]:
                 "right": vib.intensity[1],  # type: ignore[attr-defined]
                 "linked": vib.linked,  # type: ignore[attr-defined]
                 "enhanced": vib.enhanced,  # type: ignore[attr-defined]
+                "mirror_triggers": vib.mirror_triggers,  # type: ignore[attr-defined]
             },
         },
     }

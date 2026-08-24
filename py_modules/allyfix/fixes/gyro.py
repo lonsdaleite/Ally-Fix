@@ -30,12 +30,12 @@ from typing import Any
 import decky
 
 from ..base import Fix
+from ..device import SUPPORTED_BOARDS
 from ..sysfs import clean_env, dmi_board
 
 STOCK = "/usr/share/inputplumber/devices/50-rog_xbox_ally.yaml"
 OVERRIDE_DIR = "/etc/inputplumber/devices.d"
 OVERRIDE = os.path.join(OVERRIDE_DIR, "50-rog_xbox_ally.yaml")
-SUPPORTED_BOARDS = ("RC73XA", "RC73YA")
 MARKER = "managed-by: ally-fix"
 TARGETS_CACHE_S = 10.0
 

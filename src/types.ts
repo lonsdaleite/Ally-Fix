@@ -21,6 +21,7 @@ export interface VibrationOptions {
   right: number;
   linked: boolean;
   enhanced: boolean;
+  mirror_triggers: boolean;
 }
 
 export interface PluginStatus {
@@ -28,6 +29,7 @@ export interface PluginStatus {
   board: string;
   product: string;
   device_supported: boolean;
+  impulse_triggers: boolean;
   fixes: Record<FixId, FixStatus>;
   options: {
     cpu_boost: CpuBoostOptions;

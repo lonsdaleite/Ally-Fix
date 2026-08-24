@@ -4,7 +4,8 @@ Layout (settings.json):
 {
   "version": 1,
   "cpu_boost": {"enabled": false, "refresh_on_charger": true},
-  "vibration": {"enabled": false, "left": 50, "right": 50, "linked": true},
+  "vibration": {"enabled": false, "left": 50, "right": 50, "linked": true,
+                "enhanced": false, "mirror_triggers": false},
   "fan":       {"enabled": false, "curves": {"performance": {...}}},
   "gyro":      {"enabled": false}
 }
@@ -19,7 +20,7 @@ from settings import SettingsManager
 
 DEFAULTS: dict[str, dict[str, Any]] = {
     "cpu_boost": {"enabled": False, "refresh_on_charger": True},
-    "vibration": {"enabled": False, "left": 50, "right": 50, "linked": True},
+    "vibration": {"enabled": False, "left": 50, "right": 50, "linked": True, "enhanced": False, "mirror_triggers": False},
     "fan": {"enabled": False, "curves": {}},
     "gyro": {"enabled": False},
 }

@@ -16,6 +16,7 @@ export const setCpuBoostOptions = callable<[opts: Partial<CpuBoostOptions>], Act
 export const cpuCapRefreshNow = callable<[], SimpleResult>("cpu_cap_refresh_now");
 export const setVibrationOptions = callable<[opts: Partial<VibrationOptions>], ActionResult>("set_vibration_options");
 export const setEnhancedVibration = callable<[enabled: boolean], ActionResult>("set_enhanced_vibration");
+export const setTriggerMirror = callable<[enabled: boolean], ActionResult>("set_trigger_mirror");
 export const testVibration = callable<[duration_ms: number], SimpleResult>("test_vibration");
 export const fanRestoreFactoryCurve = callable<[], ActionResult>("fan_restore_factory_curve");
 export const checkUpdate = callable<[], UpdateInfo>("check_update");

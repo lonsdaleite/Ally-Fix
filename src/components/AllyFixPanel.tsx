@@ -3,7 +3,7 @@ import { useQuickAccessVisible } from "@decky/api";
 import { useEffect } from "react";
 import { store, usePluginStatus } from "../store";
 import { CpuBoostExtras } from "./CpuBoostExtras";
-import { EnhancedVibrationRow } from "./EnhancedVibrationRow";
+import { EnhancedVibrationRow, TriggerMirrorRow } from "./VibrationToggleRows";
 import { FanExtras } from "./FanExtras";
 import { FixAllButton } from "./FixAllButton";
 import { FixCard } from "./FixCard";
@@ -41,6 +41,7 @@ export function AllyFixPanel() {
         ? `now ${hw.hw_left}`
         : `now ${hw.hw_left}/${hw.hw_right}`
       : undefined;
+  const ffError = (f.vibration.details as { ff_error?: string }).ff_error;
   const fanExtra = (f.fan.details as { profile?: string }).profile;
   const cpuExtra = f.cpu_boost.enabled && !status.options.cpu_boost.refresh_on_charger ? "charger refresh off" : undefined;
 
@@ -65,7 +66,19 @@ export function AllyFixPanel() {
         id="vibration"
         status={f.vibration}
         extra={vibExtra}
-        preSettings={status.device_supported ? <EnhancedVibrationRow enhanced={vib.enhanced} /> : undefined}
+        preSettings={
+          status.device_supported ? (
+            <>
+              <EnhancedVibrationRow enhanced={vib.enhanced} />
+              {status.impulse_triggers && <TriggerMirrorRow mirror={vib.mirror_triggers} />}
+              {ffError && (
+                <PanelSectionRow>
+                  <div style={{ fontSize: "0.8em", color: "#ff9a9a" }}>Rumble filter: {ffError}</div>
+                </PanelSectionRow>
+              )}
+            </>
+          ) : undefined
+        }
       >
         <VibrationExtras options={vib} status={f.vibration} />
       </FixCard>

@@ -18,6 +18,14 @@ back at an unpredictable moment after resume — so on resume the settings are
 re-sent as a spaced series of idempotent writes, not a single shot. That reset
 raises no hid uevents (same device, no re-enumeration), so detecting the
 resume itself is what triggers the series.
+
+The driver's outgoing rumble packets (feature report 0x0D on the gamepad
+interface) are optionally rewritten by a HID-BPF program (`hidbpf.py`,
+bin/ally_ff.bpf.o): magnitudes clamped to the MCU's 0..100 while Enhanced
+Vibration is on (the driver scales evdev FF to 0..127, and 101..127 buzz under
+enhanced), and/or the grip magnitudes mirrored onto the impulse triggers. The
+program is attached per hid device, so it is re-attached whenever the
+controller re-enumerates.
 """
 
 from __future__ import annotations
@@ -32,8 +40,10 @@ from typing import Any
 
 import decky
 
+from .. import hidbpf
 from .. import settings as cfg
 from ..base import Fix, cancel_task
+from ..device import has_impulse_triggers
 from ..sysfs import read_str, write_str
 
 DRIVER_GLOB = "/sys/module/hid_asus_ally/drivers/hid:asus_rog_ally/*/vibration_intensity"
@@ -63,6 +73,7 @@ _HIDIOCGFEATURE = 0xC0000000 | (_FEATURE_REPORT_SIZE << 16) | (ord("H") << 8) | 
 _ECHO_TRIES = 3
 _EV_FF = 0x15
 _FF_RUMBLE = 0x50
+_ASUS_VENDOR = ":0B05:"
 
 
 def _clamp(v: Any, lo: int = 0, hi: int = MAX_INTENSITY) -> int:
@@ -116,6 +127,22 @@ def _find_ff_device() -> str | None:
     return candidates[0][1]
 
 
+def _gamepad_hid_id() -> int | None:
+    """Numeric hid id of the interface that owns the FF evdev node
+    (`0003:0B05:1B4C.0006` -> 6); changes when the controller re-enumerates."""
+    ev = _find_ff_device()
+    if ev is None:
+        return None
+    hid_dir = os.path.realpath(f"/sys/class/input/{os.path.basename(ev)}/device/device")
+    name = os.path.basename(hid_dir)  # bus:vendor:product.id
+    if _ASUS_VENDOR not in name.upper():
+        return None  # a virtual pad (uhid) would take the attach and filter nothing
+    try:
+        return int(name.rsplit(".", 1)[1], 16)
+    except (IndexError, ValueError):
+        return None
+
+
 class VibrationFix(Fix):
     id = "vibration"
     title = "Vibration Fix"
@@ -125,6 +152,9 @@ class VibrationFix(Fix):
         self._uevent = None  # set by plugin
         self._rebind_task: asyncio.Task | None = None
         self._hw: tuple[int, int] | None = None  # last value sent to the MCU (sysfs holds only the capped mirror)
+        self._ff_filter: hidbpf.FfFilter | None = None
+        self._ff_error = ""
+        self._ff_stale = False  # the hid device was re-created; re-attach even if the id repeats
 
     # --- options -------------------------------------------------------
     @property
@@ -139,16 +169,81 @@ class VibrationFix(Fix):
     def enhanced(self) -> bool:
         return bool(cfg.get(self.id, "enhanced", False))
 
+    @property
+    def mirror_triggers(self) -> bool:
+        return bool(cfg.get(self.id, "mirror_triggers", False)) and has_impulse_triggers()
+
     async def set_enhanced(self, on: bool) -> None:
         """Independent of the intensity fix and of `enabled`. The MCU keeps the
         flag only until the suspend reset (it survives warm reboots, not sleep),
         so an enabled flag is re-sent on start/resume/rebind. A disabled flag is
         never pushed automatically — only here and on uninstall — so a value set
-        from Windows is left alone."""
+        from Windows is left alone. While on, the FF filter clamps magnitudes."""
         confirmed = self._send_feature(_XPAD_CMD_SET_ENHANCED, bytes([1 if on else 0]))
         cfg.update(self.id, {"enhanced": bool(on)})
         decky.logger.info("[vibration] enhanced vibration %s%s",
                           "on" if on else "off", "" if confirmed else " (echo unconfirmed)")
+        self._sync_ff_filter()
+
+    async def set_mirror_triggers(self, on: bool) -> None:
+        """Mirror grip rumble onto the impulse triggers (Xbox Ally X only). Pure
+        host-side rewrite, nothing is stored in the controller."""
+        cfg.update(self.id, {"mirror_triggers": bool(on)})
+        self._sync_ff_filter()
+        if on and self._ff_error:
+            error = self._ff_error
+            cfg.update(self.id, {"mirror_triggers": False})
+            self._sync_ff_filter()
+            raise OSError(error)
+        decky.logger.info("[vibration] trigger mirroring %s", "on" if on else "off")
+
+    # --- FF packet filter (HID-BPF) ---------------------------------------
+    def _ff_flags(self) -> int:
+        flags = 0
+        if self.enhanced:
+            flags |= hidbpf.FLAG_CLAMP
+        if self.mirror_triggers:
+            flags |= hidbpf.FLAG_MIRROR
+        return flags
+
+    def _sync_ff_filter(self, force: bool = False) -> None:
+        """Bring the attached program in line with the settings: detach when
+        nothing is wanted, (re)attach when the flags or the hid device changed."""
+        flags = self._ff_flags()
+        hid_id = _gamepad_hid_id() if flags else None
+        cur = self._ff_filter
+        force = force or self._ff_stale  # a re-created hid device may reuse its id
+        if cur is not None and not force and cur.flags == flags and cur.hid_id == hid_id:
+            return
+        if cur is not None:
+            cur.close()
+            self._ff_filter = None
+            decky.logger.info("[vibration] ff filter detached from hid %d", cur.hid_id)
+        if not flags:
+            self._ff_stale = False
+            self._set_ff_error("")
+            return
+        if hid_id is None:
+            self._set_ff_error("gamepad hid device not found")
+            return
+        try:
+            self._ff_filter = hidbpf.attach(hid_id, flags)
+        except Exception as exc:  # noqa: BLE001
+            self._set_ff_error(f"ff filter not loaded: {exc}")
+            return
+        self._ff_stale = False
+        self._set_ff_error("")
+        decky.logger.info("[vibration] ff filter attached to hid %d (%s)", hid_id, hidbpf.flags_name(flags))
+
+    def _set_ff_error(self, error: str) -> None:
+        if error and error != self._ff_error:
+            decky.logger.warning("[vibration] %s", error)
+        self._ff_error = error
+
+    def _close_ff_filter(self) -> None:
+        if self._ff_filter is not None:
+            self._ff_filter.close()
+            self._ff_filter = None
 
     def _resend_enhanced(self) -> None:
         if not self.enhanced:
@@ -268,13 +363,19 @@ class VibrationFix(Fix):
             "right": right,
             "linked": self.linked,
             "enhanced": self.enhanced,
+            "mirror_triggers": self.mirror_triggers,
             "hw_left": hw[0] if hw else None,
             "hw_right": hw[1] if hw else None,
             "sysfs": _sysfs_path(),
+            "ff_filter": hidbpf.flags_name(self._ff_filter.flags) if self._ff_filter else "off",
+            "ff_error": self._ff_error,
         }
 
+    def _wants_controller(self) -> bool:
+        return self.enabled or self.enhanced or self.mirror_triggers
+
     def needs_resume(self) -> bool:
-        return self.enabled or self.enhanced
+        return self._wants_controller()
 
     async def reapply_if_enabled(self) -> None:
         await super().reapply_if_enabled()
@@ -291,21 +392,24 @@ class VibrationFix(Fix):
     async def start_background(self) -> None:
         if self._uevent is not None:
             self._uevent.subscribe("hid", self._on_hid_event)
+        self._sync_ff_filter()
 
     async def stop_background(self) -> None:
         if self._uevent is not None:
             self._uevent.unsubscribe("hid", self._on_hid_event)
         await cancel_task(self._rebind_task)
         self._rebind_task = None
+        self._close_ff_filter()
 
     async def _on_hid_event(self, event: dict[str, str]) -> None:
-        if not (self.enabled or self.enhanced):
+        if not self._wants_controller():
             return
         if event.get("ACTION") not in ("add", "bind"):
             return
         if "asus" not in event.get("DRIVER", "").lower() and "0B05" not in event.get("HID_ID", "").upper():
             return
         self._hw = None
+        self._ff_stale = True
         self._schedule_rebind(f"hid {event.get('ACTION')}")
 
     def _schedule_rebind(self, reason: str) -> None:
@@ -321,8 +425,11 @@ class VibrationFix(Fix):
         sent = failed = 0
         for delay in REBIND_DELAYS_S:
             await asyncio.sleep(delay)
-            if not (self.enabled or self.enhanced):
+            if not self._wants_controller():
                 return
+            self._sync_ff_filter()
+            if not (self.enabled or self.enhanced):
+                continue
             try:
                 if self.enabled:
                     self._write_hw(*self.intensity)
@@ -340,7 +447,7 @@ class VibrationFix(Fix):
                 parts.append("enhanced on")
             decky.logger.info("[vibration] re-applied after %s: %s (%d/%d sends ok)",
                               reason, ", ".join(parts), sent, sent + failed)
-        else:
+        elif self.enabled or self.enhanced:
             self.last_error = f"could not re-apply vibration settings after {reason}"
         await self.notify()
 

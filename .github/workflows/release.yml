@@ -21,6 +21,7 @@ jobs:
           NAME="$(python3 -c 'import json;print(json.load(open("plugin.json"))["name"])')"
           rm -rf pkg && mkdir -p "pkg/$NAME"
           cp -r out/dist out/py_modules out/main.py out/plugin.json out/package.json out/LICENSE out/README.md "pkg/$NAME/"
+          cp -r bin "pkg/$NAME/"
           find pkg -name __pycache__ -type d -exec rm -rf {} + || true
           (cd pkg && zip -r "../Ally-Fix-${GITHUB_REF_NAME}.zip" "$NAME")
       - uses: softprops/action-gh-release@v2

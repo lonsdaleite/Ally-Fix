@@ -10,7 +10,7 @@ DEST="/home/deck/homebrew/plugins/$NAME"
 systemctl stop plugin_loader
 rm -rf "$DEST"
 mkdir -p "$DEST"
-cp -r "$SRC/dist" "$SRC/py_modules" "$SRC/main.py" "$SRC/plugin.json" "$SRC/package.json" "$SRC/LICENSE" "$SRC/README.md" "$DEST/"
+cp -r "$SRC/dist" "$SRC/bin" "$SRC/py_modules" "$SRC/main.py" "$SRC/plugin.json" "$SRC/package.json" "$SRC/LICENSE" "$SRC/README.md" "$DEST/"
 find "$DEST" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 chown -R root:root "$DEST"
 systemctl start plugin_loader

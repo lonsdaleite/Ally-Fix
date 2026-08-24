@@ -2,7 +2,8 @@
 
 One-click fixes for the ROG Xbox Ally X on SteamOS. All background logic runs
 inside this process (asyncio); the only file written outside the plugin
-directory is the InputPlumber override for the Gyro Fix.
+directory is the InputPlumber override for the Gyro Fix. The rumble packet
+filter (HID-BPF) lives in the kernel only as long as this process does.
 """
 
 import asyncio
@@ -164,6 +165,21 @@ class Plugin:
             await fix.set_enhanced(bool(enabled))
         except Exception as exc:  # noqa: BLE001
             decky.logger.warning("[vibration] enhanced toggle failed: %s", exc)
+            st = await registry.status_of(fix)
+            return {"ok": False, "error": str(exc), "status": st.to_dict()}
+        st = await registry.status_of(fix)
+        return {"ok": True, "error": "", "status": st.to_dict()}
+
+    async def set_trigger_mirror(self, enabled: bool) -> dict:
+        fix = self.fixes["vibration"]
+        if not registry.has_impulse_triggers():
+            st = await registry.status_of(fix)
+            board = registry.dmi_board() or "unknown"
+            return {"ok": False, "error": f"Trigger mirroring needs a ROG Xbox Ally X (board {board})", "status": st.to_dict()}
+        try:
+            await fix.set_mirror_triggers(bool(enabled))
+        except Exception as exc:  # noqa: BLE001
+            decky.logger.warning("[vibration] trigger mirror toggle failed: %s", exc)
             st = await registry.status_of(fix)
             return {"ok": False, "error": str(exc), "status": st.to_dict()}
         st = await registry.status_of(fix)

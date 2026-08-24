@@ -17,6 +17,7 @@ export function VibrationExtras({ options, status }: { options: VibrationOptions
         right: Math.min(100, hw.hw_right ?? 100),
         linked: (hw.hw_left ?? 100) === (hw.hw_right ?? 100),
         enhanced: options.enhanced,
+        mirror_triggers: options.mirror_triggers,
       }
     : options;
   const [local, setLocal] = useState<VibrationOptions>(shown);
