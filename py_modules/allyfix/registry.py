@@ -41,6 +41,7 @@ async def plugin_status(fixes: dict[str, Fix], version: str) -> dict[str, Any]:
     statuses = {fid: (await status_of(fixes[fid])).to_dict() for fid in FIX_ORDER if fid in fixes}
     cpu = fixes["cpu_boost"]
     vib = fixes["vibration"]
+    gyro = fixes["gyro"]
     return {
         "version": version,
         "board": board,
@@ -57,5 +58,6 @@ async def plugin_status(fixes: dict[str, Fix], version: str) -> dict[str, Any]:
                 "enhanced": vib.enhanced,  # type: ignore[attr-defined]
                 "mirror_triggers": vib.mirror_triggers,  # type: ignore[attr-defined]
             },
+            "gyro": {"mode": gyro.mode},  # type: ignore[attr-defined]
         },
     }

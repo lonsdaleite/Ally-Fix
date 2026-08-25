@@ -1,19 +1,27 @@
-"""Gyro Fix: un-invert gyro yaw for the ROG Xbox Ally X in Steam Input.
+"""Gyro Fix: make Steam Input read the Ally's gyro axes the right way.
 
-Steam Input flips the yaw sign for the USB product id InputPlumber's
-`deck-uhid` target emulates for the Ally ("ASUS ROG Xbox Ally"). The simplest
-working override is the InputPlumber device config with the y row of the IMU
-mount matrix negated. InputPlumber loads /etc/inputplumber/devices.d before
-/usr/share/inputplumber/devices, so a same-named file there wins.
+Steam identifies InputPlumber's `deck-uhid` target by product id. For the Ally id
+(0x12fd) it treats the controller as a "handheld" and tilts the IMU frame, and its two
+gyro code paths — the modern gyro-to-joystick/mouse modes and the legacy `absolute_mouse`
+Camera action that Valve's Source layouts use (Portal 2, Half-Life 2, …) — apply that tilt
+differently, so no single mount matrix satisfies both. Three modes, chosen in Settings
+(measurements behind this are in DEV.md):
 
-The override is *generated* from the installed stock file (one line patched)
-and stamped with the stock file's hash, so an InputPlumber update is detected
-as "stale" and the override is regenerated instead of silently shadowing a
-newer stock config with an old copy.
+- simple: stock override with the mount-matrix y row negated. Modern modes right;
+  Source layouts keep Yaw and Roll swapped.
+- complex: `gyro_force_handheld_orientation 2` in Steam's steam_dev.cfg (both code
+  paths then read the report the same way) plus the y/z rows swapped. Everything right;
+  Steam has to be restarted when the line is added or removed.
+- deck: composite device renamed so InputPlumber emulates the generic id (0x12f0) with
+  the stock matrix. Everything right, but Steam sees a different controller: layouts
+  saved for the ROG Ally no longer apply.
 
-Caveats: only with the `deck-uhid` target; yaw through `ds5` targets becomes
-inverted; when InputPlumber normalizes IMU data upstream this fix should be
-turned off.
+The override is *generated* from the installed stock file and stamped with the stock
+file's hash, so an InputPlumber update is detected as "stale" and the override is
+regenerated instead of silently shadowing a newer stock config with an old copy.
+InputPlumber loads /etc/inputplumber/devices.d before /usr/share/inputplumber/devices,
+so a same-named file there wins. Only with the `deck-uhid` target; a `ds5` target gets
+inverted yaw (simple) or swapped axes (complex) while the fix is on.
 """
 
 from __future__ import annotations
@@ -29,6 +37,7 @@ from typing import Any
 
 import decky
 
+from .. import settings as cfg
 from ..base import Fix
 from ..device import SUPPORTED_BOARDS
 from ..sysfs import clean_env, dmi_board
@@ -39,7 +48,17 @@ OVERRIDE = os.path.join(OVERRIDE_DIR, "50-rog_xbox_ally.yaml")
 MARKER = "managed-by: ally-fix"
 TARGETS_CACHE_S = 10.0
 
-_MATRIX_Y = re.compile(r"^(\s*)y:\s*\[\s*0\s*,\s*-1\s*,\s*0\s*\]\s*$", re.M)
+MODES = ("simple", "complex", "deck")
+DEFAULT_MODE = "simple"
+DECK_NAME = "ASUS ROG Xbox Ally (Deck Emulation)"  # matches no arm in InputPlumber's PID table -> Generic
+
+STEAM_CFG = os.path.join(decky.DECKY_USER_HOME, ".local", "share", "Steam", "steam_dev.cfg")
+CONVAR = "gyro_force_handheld_orientation"
+CONVAR_LINE = f"{CONVAR} 2"
+
+_ROW_Y = re.compile(r"^([ \t]*)y:[ \t]*\[\s*0\s*,\s*-1\s*,\s*0\s*\][ \t]*$", re.M)
+_ROW_Z = re.compile(r"^([ \t]*)z:[ \t]*\[\s*0\s*,\s*0\s*,\s*-1\s*\][ \t]*$", re.M)
+_NAME = re.compile(r"^name:[ \t]*ASUS ROG Xbox Ally[ \t]*$", re.M)
 _HASH_LINE = re.compile(r"^# stock-sha256:\s*([0-9a-f]{64})\s*$", re.M)
 
 DBUS_DEST = "org.shadowblip.InputPlumber"
@@ -52,18 +71,51 @@ def _sha256(path: str) -> str:
         return hashlib.sha256(f.read()).hexdigest()
 
 
-def _render(stock_text: str, stock_hash: str) -> str:
-    patched, n = _MATRIX_Y.subn(r"\1y: [0, 1, 0]", stock_text, count=1)
-    if n != 1:
-        raise RuntimeError("stock config has no 'y: [0, -1, 0]' mount matrix row; upstream changed, fix may be obsolete")
+def _patch(stock_text: str, mode: str) -> str:
+    """Stock config with the one change a mode needs. Raises if the stock file no longer
+    has the lines we patch (upstream changed; the fix may be obsolete)."""
+    if mode == "simple":
+        text, n = _ROW_Y.subn(r"\1y: [0, 1, 0]", stock_text, count=1)
+        ok = n == 1
+    elif mode == "complex":
+        text, n1 = _ROW_Y.subn(r"\1y: [0, 0, -1]", stock_text, count=1)
+        text, n2 = _ROW_Z.subn(r"\1z: [0, -1, 0]", text, count=1)
+        ok = n1 == 1 and n2 == 1
+    elif mode == "deck":
+        text, n = _NAME.subn(f"name: {DECK_NAME}", stock_text, count=1)
+        ok = n == 1
+    else:
+        raise ValueError(f"unknown gyro mode {mode!r}")
+    if not ok:
+        raise RuntimeError("stock config has no line to patch for this mode; upstream changed, fix may be obsolete")
+    return text
+
+
+_MODE_NOTE = {
+    "simple": "the IMU mount-matrix y row is negated (Simple mode)",
+    "complex": "the IMU mount-matrix y and z rows are swapped (Complex mode, with\n"
+               "# gyro_force_handheld_orientation 2 in Steam's steam_dev.cfg)",
+    "deck": "the composite device is renamed so InputPlumber emulates the generic\n"
+            "# Steam Controller product id (Deck Emulation mode)",
+}
+
+
+def _render(stock_text: str, stock_hash: str, mode: str) -> str:
+    patched = _patch(stock_text, mode)
     header = (
         f"# {MARKER}\n"
         f"# stock-sha256: {stock_hash}\n"
+        f"# mode: {mode}\n"
         "# Generated by the Ally Fix Decky plugin from the stock InputPlumber config.\n"
-        "# Only change: the IMU mount matrix y row is negated to un-invert gyro yaw in\n"
-        "# Steam Input via the deck-uhid target. Delete this file to return to stock.\n\n"
+        f"# Only change: {_MODE_NOTE[mode]}. Delete this file to return to stock.\n\n"
     )
     return header + patched
+
+
+def _body(text: str) -> str:
+    """Config text without comments and blank lines (to recognise a hand-made copy of
+    one of our modes)."""
+    return "\n".join(l.rstrip() for l in text.splitlines() if l.strip() and not l.lstrip().startswith("#"))
 
 
 def _run_sync(argv: tuple[str, ...], timeout: float) -> tuple[int, str]:
@@ -89,7 +141,33 @@ class GyroFix(Fix):
     id = "gyro"
     title = "Gyro Fix"
 
-    # --- state inspection -----------------------------------------------
+    # --- options -------------------------------------------------------
+    @property
+    def mode(self) -> str:
+        """Selected mode. Until one is chosen explicitly, a hand-made override that matches
+        one of our modes defines it — so the UI and apply() agree on what enabling does."""
+        if not cfg.get(self.id, "mode_chosen", False):
+            adopted = self._adoptable_mode()
+            if adopted:
+                return adopted
+        m = cfg.get(self.id, "mode", DEFAULT_MODE)
+        return m if m in MODES else DEFAULT_MODE
+
+    def set_options(self, opts: dict[str, Any]) -> None:
+        mode = opts.get("mode")
+        if mode in MODES:
+            cfg.update(self.id, {"mode": mode, "mode_chosen": True})
+
+    _lock: asyncio.Lock | None = None
+
+    def _serialized(self) -> asyncio.Lock:
+        # apply/revert both touch the override, steam_dev.cfg and restart InputPlumber;
+        # a toggle during a mode change must wait, not interleave.
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
+    # --- override inspection --------------------------------------------
     @staticmethod
     def _override_text() -> str | None:
         try:
@@ -97,19 +175,142 @@ class GyroFix(Fix):
                 return f.read()
         except OSError:
             return None
+        except ValueError:  # not UTF-8: treat as a foreign file, never crash status()
+            return "\ufffd"
 
     def _override_state(self) -> str:
-        """'absent' | 'foreign' | 'stale' | 'current'"""
+        """'absent' | 'foreign' | 'adoptable' | 'stale' | 'mismatch' | 'current'
+
+        adoptable: not ours, but a plain copy of the stock file with exactly one of our
+        mode edits (e.g. put there by hand while testing) — safe to overwrite.
+        mismatch: ours and up to date with stock, but not the selected mode.
+        """
         text = self._override_text()
         if text is None:
             return "absent"
+        if not os.path.exists(STOCK):
+            return "stale" if MARKER in text else "foreign"
         if MARKER not in text:
+            try:
+                with open(STOCK, "r", encoding="utf-8") as f:
+                    stock_text = f.read()
+                if any(_body(text) == _body(_patch(stock_text, m)) for m in MODES):
+                    return "adoptable"
+            except (OSError, RuntimeError):
+                pass
             return "foreign"
         m = _HASH_LINE.search(text)
-        if not m or not os.path.exists(STOCK) or m.group(1) != _sha256(STOCK):
+        if not m or m.group(1) != _sha256(STOCK):
             return "stale"
-        return "current"
+        try:
+            with open(STOCK, "r", encoding="utf-8") as f:
+                expected = _render(f.read(), m.group(1), self.mode)
+        except (OSError, RuntimeError):
+            # Stock is current but cannot be patched for the selected mode: apply() will
+            # report that; the override that is there keeps working meanwhile.
+            return "mismatch"
+        return "current" if text == expected else "mismatch"
 
+    def _adoptable_mode(self) -> str | None:
+        """Which mode a hand-made override corresponds to (None if not adoptable)."""
+        text = self._override_text()
+        if text is None:
+            return None
+        try:
+            with open(STOCK, "r", encoding="utf-8") as f:
+                stock_text = f.read()
+            for m in MODES:
+                if _body(text) == _body(_patch(stock_text, m)):
+                    return m
+        except (OSError, RuntimeError):
+            pass
+        return None
+
+    # --- steam_dev.cfg ----------------------------------------------------
+    @staticmethod
+    def _cfg_text() -> str | None:
+        try:
+            with open(STEAM_CFG, "r", encoding="utf-8", newline="") as f:
+                return f.read()
+        except OSError:
+            return None
+        except ValueError:
+            raise RuntimeError(f"{STEAM_CFG} is not UTF-8; not touching it") from None
+
+    @staticmethod
+    def _is_ours(line: str) -> bool:
+        return line.split() == [CONVAR, "2"]
+
+    @classmethod
+    def _cfg_has_convar(cls) -> bool:
+        try:
+            text = cls._cfg_text() or ""
+        except RuntimeError:
+            return False
+        return any(cls._is_ours(l) for l in text.splitlines())
+
+    def _cfg_set(self, present: bool) -> bool:
+        """Add or remove our ConVar line. steam_dev.cfg is shared with other tools (download
+        tweaks, other plugins): every other line is kept byte for byte, line endings
+        included, the file's owner and mode are preserved, and it is deleted only when
+        nothing but our line was in it. A different value someone else set is replaced in
+        place and put back when our line goes. Returns True if the file changed. Steam reads
+        the file only at start-up; the UI asks for a restart before calling us."""
+        text = self._cfg_text()
+        if text is None and not present:
+            return False
+        cur = (text or "").splitlines(keepends=True)
+        ours = [i for i, l in enumerate(cur) if self._is_ours(l)]
+        theirs = [i for i, l in enumerate(cur) if l.split()[:1] == [CONVAR] and not self._is_ours(l)]
+
+        def eol(line: str) -> str:
+            return "\r\n" if line.endswith("\r\n") else "\n"
+
+        if present:
+            if ours:
+                return False  # already there, wherever it is
+            new = list(cur)
+            if theirs:
+                cfg.set(self.id, "steam_cfg_prev", cur[theirs[0]].rstrip("\r\n"))
+                new[theirs[0]] = CONVAR_LINE + eol(cur[theirs[0]])
+                new = [l for i, l in enumerate(new) if i not in theirs[1:]]
+            else:
+                cfg.set(self.id, "steam_cfg_prev", "")  # nothing of theirs to put back later
+                nl = next((eol(l) for l in new if l.endswith("\n")), "\n")
+                if new and not new[-1].endswith(("\n", "\r")):
+                    new[-1] += nl
+                new.append(CONVAR_LINE + nl)
+        else:
+            if not ours:
+                cfg.set(self.id, "steam_cfg_prev", "")  # line already gone (by hand); nothing to restore
+                return False
+            prev = str(cfg.get(self.id, "steam_cfg_prev", "") or "")
+            new = list(cur)
+            drop = ours
+            if prev and not theirs:
+                new[ours[0]] = prev + eol(cur[ours[0]])
+                drop = ours[1:]
+            new = [l for i, l in enumerate(new) if i not in drop]
+            cfg.set(self.id, "steam_cfg_prev", "")
+        body = "".join(new)
+        steam_dir = os.path.dirname(STEAM_CFG)
+        if not os.path.isdir(steam_dir):
+            raise RuntimeError(f"Steam directory not found: {steam_dir}")
+        if not body.strip():
+            os.remove(STEAM_CFG)
+        else:
+            st = os.stat(STEAM_CFG) if text is not None else os.stat(steam_dir)
+            mode = st.st_mode & 0o777 if text is not None else 0o644
+            tmp = STEAM_CFG + ".tmp"
+            with open(tmp, "w", encoding="utf-8", newline="") as f:
+                f.write(body)
+            os.chmod(tmp, mode)
+            os.chown(tmp, st.st_uid, st.st_gid)
+            os.replace(tmp, STEAM_CFG)
+        decky.logger.info("[gyro] %s %s in %s", "wrote" if present else "removed", CONVAR, STEAM_CFG)
+        return True
+
+    # --- InputPlumber ----------------------------------------------------
     async def _composite_path(self) -> str | None:
         """Find the composite device that is the Ally itself (by its Name)."""
         code, out = await _run("busctl", "--system", "tree", "--list", DBUS_DEST, timeout=5)
@@ -144,6 +345,12 @@ class GyroFix(Fix):
                     types.append(t[0])
         return types
 
+    async def _restart_inputplumber(self) -> None:
+        code, out = await _run("systemctl", "restart", "inputplumber")
+        if code != 0:
+            raise RuntimeError(f"systemctl restart inputplumber failed ({code}): {out}")
+        decky.logger.info("[gyro] inputplumber restarted")
+
     # --- Fix interface ---------------------------------------------------
     def supported(self) -> tuple[bool, str]:
         board = dmi_board()
@@ -156,7 +363,7 @@ class GyroFix(Fix):
         return True, ""
 
     def is_applied(self) -> bool:
-        return self._override_state() == "current"
+        return self._override_state() == "current" and self._cfg_has_convar() == (self.mode == "complex")
 
     def status(self):  # type: ignore[override]
         st = super().status()
@@ -171,14 +378,27 @@ class GyroFix(Fix):
         return st
 
     async def apply(self) -> None:
+        async with self._serialized():
+            await self._apply()
+
+    async def revert(self) -> None:
+        async with self._serialized():
+            await self._revert()
+
+    async def _apply(self) -> None:
         state = self._override_state()
         if state == "foreign":
             raise RuntimeError(f"{OVERRIDE} exists and is not managed by Ally Fix; remove it manually first")
+        if state == "adoptable" and not cfg.get(self.id, "mode_chosen", False):
+            # A hand-made copy of one of our modes and no mode picked yet: `mode` already
+            # reports it; persist it so it survives the override being rewritten.
+            decky.logger.info("[gyro] adopting mode %s from the existing override", self.mode)
+            cfg.set(self.id, "mode", self.mode)
         stock_hash = _sha256(STOCK)
         with open(STOCK, "r", encoding="utf-8") as f:
             stock_text = f.read()
         try:
-            text = _render(stock_text, stock_hash)
+            text = _render(stock_text, stock_hash, self.mode)
         except RuntimeError:
             if state == "stale":
                 # Never leave an outdated full copy shadowing a newer stock config.
@@ -186,39 +406,42 @@ class GyroFix(Fix):
                 decky.logger.warning("[gyro] stock config changed and cannot be patched; stale override removed")
                 await self._restart_inputplumber()
             raise
-        if self._override_text() == text:
-            decky.logger.info("[gyro] override already current")
-            return
-        os.makedirs(OVERRIDE_DIR, mode=0o755, exist_ok=True)
-        tmp = OVERRIDE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.chmod(tmp, 0o644)
-        os.replace(tmp, OVERRIDE)
-        decky.logger.info("[gyro] override written to %s", OVERRIDE)
-        await self._restart_inputplumber()
+        if self._override_text() != text:
+            os.makedirs(OVERRIDE_DIR, mode=0o755, exist_ok=True)
+            tmp = OVERRIDE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(text)
+            os.chmod(tmp, 0o644)
+            os.replace(tmp, OVERRIDE)
+            decky.logger.info("[gyro] override written to %s (mode %s)", OVERRIDE, self.mode)
+            await self._restart_inputplumber()
+        else:
+            decky.logger.info("[gyro] override already current (mode %s)", self.mode)
+        self._cfg_set(self.mode == "complex")
 
-    async def revert(self) -> None:
+    async def _revert(self) -> None:
         state = self._override_state()
-        if state == "absent":
-            return
+        err: Exception | None = None
         if state == "foreign":
-            raise RuntimeError(f"{OVERRIDE} is not managed by Ally Fix; not removing it")
-        os.remove(OVERRIDE)
-        decky.logger.info("[gyro] override removed")
-        await self._restart_inputplumber()
-
-    async def _restart_inputplumber(self) -> None:
-        code, out = await _run("systemctl", "restart", "inputplumber")
-        if code != 0:
-            raise RuntimeError(f"systemctl restart inputplumber failed ({code}): {out}")
-        decky.logger.info("[gyro] inputplumber restarted")
+            err = RuntimeError(f"{OVERRIDE} is not managed by Ally Fix; not removing it")
+        try:
+            if state not in ("foreign", "absent"):
+                os.remove(OVERRIDE)
+                decky.logger.info("[gyro] override removed")
+                await self._restart_inputplumber()
+        finally:
+            self._cfg_set(False)
+        if err:
+            raise err
 
     def details(self) -> dict[str, Any]:
         return {
             "board": dmi_board(),
             "override": self._override_state(),
             "override_path": OVERRIDE,
+            "mode": self.mode,
+            "steam_cfg": STEAM_CFG,
+            "steam_cfg_present": self._cfg_has_convar(),
         }
 
     _targets_cache: tuple[float, list[str]] = (0.0, [])
@@ -235,9 +458,5 @@ class GyroFix(Fix):
         d["targets"] = targets
         d["deck_uhid"] = "deck-uhid" in targets
         return d
-
-    async def start_background(self) -> None:
-        # InputPlumber update while we were enabled: regenerate.
-        if self.enabled and self.supported()[0] and self._override_state() == "stale":
-            decky.logger.info("[gyro] stock config changed since override was generated; regenerating")
-            await self.reapply_if_enabled()
+    # Plugin start already runs reapply_if_enabled() for every fix (main.py), which
+    # regenerates a stale or wrong-mode override; no extra start_background hook needed.

@@ -24,6 +24,30 @@ export interface VibrationOptions {
   mirror_triggers: boolean;
 }
 
+export type GyroMode = "simple" | "complex" | "deck";
+
+export interface GyroOptions {
+  mode: GyroMode;
+}
+
+export const GYRO_MODES: { data: GyroMode; label: string; description: string }[] = [
+  {
+    data: "simple",
+    label: "Simple",
+    description: "Fixes the gyro in regular games. In Valve's Source games (Portal 2, Half-Life 2) Yaw and Roll stay swapped.",
+  },
+  {
+    data: "complex",
+    label: "Complex",
+    description: "Fixes the gyro everywhere. Steam has to be restarted when this mode is switched on or off.",
+  },
+  {
+    data: "deck",
+    label: "Deck Emulation",
+    description: "Fixes the gyro everywhere by presenting a generic controller to Steam. Layouts saved for the ROG Ally no longer apply.",
+  },
+];
+
 export interface PluginStatus {
   version: string;
   board: string;
@@ -34,6 +58,7 @@ export interface PluginStatus {
   options: {
     cpu_boost: CpuBoostOptions;
     vibration: VibrationOptions;
+    gyro: GyroOptions;
   };
 }
 

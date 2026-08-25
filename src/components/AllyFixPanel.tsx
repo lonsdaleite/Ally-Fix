@@ -1,7 +1,10 @@
 import { Field, PanelSection, PanelSectionRow } from "@decky/ui";
 import { useQuickAccessVisible } from "@decky/api";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { store, usePluginStatus } from "../store";
+import { GYRO_MODES } from "../types";
+import { confirm, gyroNeedsSteamRestart, RESTART_TEXT } from "../steamRestart";
+import type { Decision } from "./FixCard";
 import { CpuBoostExtras } from "./CpuBoostExtras";
 import { EnhancedVibrationRow, TriggerMirrorRow } from "./VibrationToggleRows";
 import { FanExtras } from "./FanExtras";
@@ -14,6 +17,8 @@ import { UpdateRow } from "./UpdateRow";
 export function AllyFixPanel() {
   const status = usePluginStatus();
   const visible = useQuickAccessVisible();
+  // One flag for the whole gyro card: the toggle and the mode dropdown must not run at once.
+  const [gyroBusy, setGyroBusy] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -44,6 +49,18 @@ export function AllyFixPanel() {
   const ffError = (f.vibration.details as { ff_error?: string }).ff_error;
   const fanExtra = (f.fan.details as { profile?: string }).profile;
   const cpuExtra = f.cpu_boost.enabled && !status.options.cpu_boost.refresh_on_charger ? "charger refresh off" : undefined;
+  const gyroExtra = GYRO_MODES.find((m) => m.data === status.options.gyro.mode)?.label;
+  // Ask before touching anything when the toggle adds or removes the steam_dev.cfg line.
+  const gyroGuard = async (enabled: boolean): Promise<Decision> => {
+    const cur = store.get();
+    if (!cur || !gyroNeedsSteamRestart(cur, enabled, cur.options.gyro.mode)) return "ok";
+    const d = await confirm({
+      title: enabled ? "Turn Gyro Fix on?" : "Turn Gyro Fix off?",
+      description: RESTART_TEXT,
+      ok: "Apply and restart Steam",
+    });
+    return d === "ok" ? "ok-restart" : "cancel";
+  };
 
   return (
     <>
@@ -85,8 +102,8 @@ export function AllyFixPanel() {
       <FixCard id="fan" status={f.fan} extra={fanExtra}>
         <FanExtras status={f.fan} />
       </FixCard>
-      <FixCard id="gyro" status={f.gyro}>
-        <GyroExtras status={f.gyro} />
+      <FixCard id="gyro" status={f.gyro} extra={gyroExtra} guard={gyroGuard} locked={gyroBusy} onBusy={setGyroBusy}>
+        <GyroExtras options={status.options.gyro} status={f.gyro} locked={gyroBusy} onBusy={setGyroBusy} />
       </FixCard>
       <UpdateRow version={status.version} device={status.product || status.board} />
     </>

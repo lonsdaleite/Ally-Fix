@@ -1,9 +1,10 @@
 """Ally Fix — Decky Loader plugin backend.
 
 One-click fixes for the ROG Xbox Ally X on SteamOS. All background logic runs
-inside this process (asyncio); the only file written outside the plugin
-directory is the InputPlumber override for the Gyro Fix. The rumble packet
-filter (HID-BPF) lives in the kernel only as long as this process does.
+inside this process (asyncio); the only files written outside the plugin
+directory are the InputPlumber override for the Gyro Fix and, in its Complex
+mode, one line in Steam's steam_dev.cfg. The rumble packet filter (HID-BPF)
+lives in the kernel only as long as this process does.
 """
 
 import asyncio
@@ -103,7 +104,8 @@ class Plugin:
 
     @staticmethod
     def _reset_defaults_on_enable(fix) -> None:
-        """Turning a fix on (explicitly) brings its sub-options back to defaults."""
+        """Turning a fix on (explicitly) brings its sub-options back to defaults.
+        The gyro mode is deliberately left alone: it is a choice, not a tweak."""
         if fix.id == "cpu_boost":
             fix.set_options({"refresh_on_charger": True})
         elif fix.id == "vibration":
@@ -123,12 +125,17 @@ class Plugin:
         st = await registry.status_of(fix)
         return {"ok": st.state != "error", "error": st.message, "status": st.to_dict()}
 
-    async def fix_all(self) -> dict:
+    async def fix_all(self, skip: list | None = None) -> dict:
+        """Enable every supported fix except the ids in `skip` (the UI skips the Gyro Fix
+        when the user declines the Steam restart its Complex mode needs)."""
         if not registry.device_supported():
             decky.logger.warning("fix_all refused: unsupported device %s", registry.dmi_board())
             return await self.get_status()
+        skipped = set(skip or [])
         for fid in registry.FIX_ORDER:
             fix = self.fixes[fid]
+            if fid in skipped:
+                continue
             if fix.supported()[0]:
                 self._reset_defaults_on_enable(fix)
                 await fix.set_and_apply(True)
@@ -139,6 +146,13 @@ class Plugin:
         fix.set_options(opts or {})
         st = await registry.status_of(fix)
         return {"ok": True, "error": "", "status": st.to_dict()}
+
+    async def set_gyro_options(self, opts: dict) -> dict:
+        fix = self.fixes["gyro"]
+        fix.set_options(opts or {})  # type: ignore[attr-defined]
+        await fix.reapply_if_enabled()
+        st = await registry.status_of(fix)
+        return {"ok": st.state != "error", "error": st.message, "status": st.to_dict()}
 
     async def cpu_cap_refresh_now(self) -> dict:
         fix = self.fixes["cpu_boost"]
