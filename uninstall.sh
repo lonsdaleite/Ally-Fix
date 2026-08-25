@@ -1,7 +1,7 @@
 #!/bin/bash
 # Ally Fix uninstaller: removes the plugin and reverts every fix, including the InputPlumber
-# override the Gyro Fix writes to /etc and its line in Steam's steam_dev.cfg (the two things
-# that survive a reboot).
+# override the Gyro Fix writes to /etc, its line in Steam's steam_dev.cfg, and the Steam-client
+# shim plus service drop-in of the Gamepad Layout Fix (the things that survive a reboot).
 #   curl -fsSL https://raw.githubusercontent.com/lonsdaleite/Ally-Fix/main/uninstall.sh | bash
 # Optional: PURGE=1 also removes the plugin's settings and logs.
 set -euo pipefail
@@ -11,6 +11,9 @@ HOMEBREW="${HOMEBREW_DIR:-$HOME/homebrew}"
 OVERRIDE="/etc/inputplumber/devices.d/50-rog_xbox_ally.yaml"
 MARKER="managed-by: ally-fix"
 STEAM_CFG="$HOME/.local/share/Steam/steam_dev.cfg"
+LAYOUT_DROPIN="$HOME/.config/systemd/user/steam-launcher.service.d/zz-ally-fix-gamepad-layout.conf"
+LAYOUT_LIB_DIR="$HOME/.local/lib/ally-fix"
+SHIM_LOG="$HOME/.local/state/ally-fix-allycaps.log"
 
 if [ "$(id -u)" = 0 ]; then
   echo "Run this script as the regular user (it will ask for sudo)." >&2
@@ -30,7 +33,14 @@ if [ -f "$STEAM_CFG" ] && grep -qE '^[[:space:]]*gyro_force_handheld_orientation
   [ -s "$STEAM_CFG" ] || rm -f "$STEAM_CFG"
   echo "  - steam_dev.cfg gyro line removed (takes effect after Steam restarts)"
 fi
-sudo env PURGE="${PURGE:-0}" HOMEBREW="$HOMEBREW" OVERRIDE="$OVERRIDE" MARKER="$MARKER" PLUGIN_NAME="$PLUGIN_NAME" bash <<'ROOT'
+# Gamepad Layout Fix -> drop the LD_PRELOAD drop-in and the shim (both owned by the user)
+if [ -f "$LAYOUT_DROPIN" ] || [ -d "$LAYOUT_LIB_DIR" ]; then
+  rm -f "$LAYOUT_DROPIN"
+  rm -rf "$LAYOUT_LIB_DIR"
+  systemctl --user daemon-reload 2>/dev/null || true
+  echo "  - Steam-client shim and service drop-in removed (takes effect after Steam restarts)"
+fi
+sudo env PURGE="${PURGE:-0}" HOMEBREW="$HOMEBREW" SHIM_LOG="$SHIM_LOG" OVERRIDE="$OVERRIDE" MARKER="$MARKER" PLUGIN_NAME="$PLUGIN_NAME" bash <<'ROOT'
 set -u
 plugin_dir="$HOMEBREW/plugins/$PLUGIN_NAME"
 if [ -d "$plugin_dir" ]; then
@@ -86,7 +96,7 @@ if [ -f "$OVERRIDE" ]; then
 fi
 
 if [ "$PURGE" = 1 ]; then
-  rm -rf "$HOMEBREW/settings/$PLUGIN_NAME" "$HOMEBREW/logs/$PLUGIN_NAME"
+  rm -rf "$HOMEBREW/settings/$PLUGIN_NAME" "$HOMEBREW/logs/$PLUGIN_NAME" "$SHIM_LOG"
   echo "  - settings and logs removed"
 fi
 systemctl start plugin_loader 2>/dev/null || true

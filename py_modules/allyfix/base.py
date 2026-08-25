@@ -10,7 +10,7 @@ import decky
 
 from . import settings as cfg
 
-StateName = str  # "applied" | "not_applied" | "not_supported" | "error" | "stale"
+StateName = str  # "applied" | "not_applied" | "not_supported" | "error" | "stale" | "restart_pending"
 
 
 @dataclass

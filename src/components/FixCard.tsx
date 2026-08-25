@@ -2,21 +2,19 @@ import { PanelSection, PanelSectionRow, ToggleField } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { useState, type ReactNode } from "react";
 import { setFixEnabled } from "../api";
-import { restartSteam } from "../steamRestart";
+import { confirm, RESTART_RULES, restartSteam } from "../steamRestart";
 import { store } from "../store";
 import { FIX_LABELS, type FixId, type FixStatus } from "../types";
 import { Collapsible } from "./Collapsible";
 import { StatusLine } from "./StatusLine";
 
-/** Answer of a toggle guard: proceed, proceed and restart Steam afterwards, or do nothing. */
-export type Decision = "ok" | "ok-restart" | "cancel";
+type Decision = "ok" | "ok-restart" | "cancel";
 
 export function FixCard({
   id,
   status,
   extra,
   preSettings,
-  guard,
   locked,
   onBusy,
   children,
@@ -25,7 +23,6 @@ export function FixCard({
   status: FixStatus;
   extra?: string;
   preSettings?: ReactNode; // rendered above the Settings collapsible, not gated by Enable
-  guard?: (enabled: boolean) => Promise<Decision>; // asked before anything changes
   locked?: boolean; // another action on this fix (e.g. a mode change) is running
   onBusy?: (busy: boolean) => void;
   children?: ReactNode;
@@ -43,7 +40,19 @@ export function FixCard({
 
   const onToggle = async (enabled: boolean) => {
     if (busy) return;
-    const decision = guard ? await guard(enabled) : "ok";
+    // Nothing is touched before the answer when the change only takes effect after a
+    // Steam restart (steam_dev.cfg, the LD_PRELOAD drop-in).
+    let decision: Decision = "ok";
+    const rule = RESTART_RULES[id];
+    const cur = store.get();
+    if (rule && cur && rule.needs(cur, enabled)) {
+      const d = await confirm({
+        title: enabled ? `Turn ${title} on?` : `Turn ${title} off?`,
+        description: rule.text,
+        ok: "Apply and restart Steam",
+      });
+      decision = d === "ok" ? "ok-restart" : "cancel";
+    }
     if (decision === "cancel") {
       setRev((r) => r + 1);
       return;
@@ -55,7 +64,7 @@ export function FixCard({
       if (res.status) store.patchFix(res.status);
       if (!res.ok) toaster.toast({ title, body: res.error || "Failed" });
       await store.refresh(); // options (sub-settings) may have been reset by the backend
-      if (res.ok && decision === "ok-restart") restartSteam();
+      if (res.ok && decision === "ok-restart") void restartSteam();
     } catch (e) {
       store.patchFix(status);
       toaster.toast({ title, body: String(e) });

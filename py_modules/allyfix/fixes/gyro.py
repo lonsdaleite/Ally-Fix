@@ -32,7 +32,6 @@ import os
 import re
 import shutil
 import time
-import subprocess
 from typing import Any
 
 import decky
@@ -40,7 +39,8 @@ import decky
 from .. import settings as cfg
 from ..base import Fix
 from ..device import SUPPORTED_BOARDS
-from ..sysfs import clean_env, dmi_board
+from ..shell import run as _run
+from ..sysfs import dmi_board
 
 STOCK = "/usr/share/inputplumber/devices/50-rog_xbox_ally.yaml"
 OVERRIDE_DIR = "/etc/inputplumber/devices.d"
@@ -116,25 +116,6 @@ def _body(text: str) -> str:
     """Config text without comments and blank lines (to recognise a hand-made copy of
     one of our modes)."""
     return "\n".join(l.rstrip() for l in text.splitlines() if l.strip() and not l.lstrip().startswith("#"))
-
-
-def _run_sync(argv: tuple[str, ...], timeout: float) -> tuple[int, str]:
-    env = clean_env()
-    exe = shutil.which(argv[0], path=env["PATH"]) or argv[0]
-    try:
-        proc = subprocess.run([exe, *argv[1:]], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              env=env, timeout=timeout, check=False)
-    except subprocess.TimeoutExpired:
-        return 124, "timeout"
-    except OSError as exc:
-        return 127, f"{argv[0]}: {exc}"
-    return proc.returncode, proc.stdout.decode(errors="replace").strip()
-
-
-async def _run(*argv: str, timeout: float = 20.0) -> tuple[int, str]:
-    # Plain subprocess in a worker thread: asyncio subprocess support depends on
-    # the host loop/thread setup, which the Decky runtime does not guarantee.
-    return await asyncio.get_running_loop().run_in_executor(None, _run_sync, argv, timeout)
 
 
 class GyroFix(Fix):

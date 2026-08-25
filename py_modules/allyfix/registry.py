@@ -10,16 +10,17 @@ from .base import Fix, FixStatus
 from .device import SUPPORTED_BOARDS, device_supported, has_impulse_triggers  # noqa: F401
 from .fixes.cpu_boost import CpuBoostFix
 from .fixes.fan import FanFix
+from .fixes.gamepad_layout import GamepadLayoutFix
 from .fixes.gyro import GyroFix
 from .fixes.vibration import VibrationFix
 from .sysfs import dmi_board, dmi_product
 
-FIX_ORDER = ("cpu_boost", "vibration", "fan", "gyro")
+FIX_ORDER = ("cpu_boost", "vibration", "fan", "gyro", "gamepad_layout")
 
 
 def build() -> dict[str, Fix]:
     fixes: dict[str, Fix] = {}
-    for cls in (CpuBoostFix, VibrationFix, FanFix, GyroFix):
+    for cls in (CpuBoostFix, VibrationFix, FanFix, GyroFix, GamepadLayoutFix):
         fix = cls()
         fixes[fix.id] = fix
     return fixes

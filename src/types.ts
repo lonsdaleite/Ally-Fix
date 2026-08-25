@@ -1,7 +1,7 @@
-export type FixId = "cpu_boost" | "vibration" | "fan" | "gyro";
-export const FIX_IDS: FixId[] = ["cpu_boost", "vibration", "fan", "gyro"];
+export type FixId = "cpu_boost" | "vibration" | "fan" | "gyro" | "gamepad_layout";
+export const FIX_IDS: FixId[] = ["cpu_boost", "vibration", "fan", "gyro", "gamepad_layout"];
 
-export type FixState = "applied" | "not_applied" | "not_supported" | "error" | "stale";
+export type FixState = "applied" | "not_applied" | "not_supported" | "error" | "stale" | "restart_pending";
 
 export interface FixStatus {
   id: FixId;
@@ -48,6 +48,24 @@ export const GYRO_MODES: { data: GyroMode; label: string; description: string }[
   },
 ];
 
+/** Outcome of the UI half of the Gamepad Layout Fix (see gamepadLayout.ts). */
+export interface UiPatchResult {
+  ok: boolean;
+  stage?: string;
+  error?: string;
+  module?: string;
+  wrapped?: string[];
+  caps?: string[];
+}
+
+export interface GamepadLayoutDetails {
+  native_ready: boolean; // shim copy and service drop-in are in place
+  shim_active: boolean; // the native shim is loaded in the running Steam client
+  shim_patched: boolean | null;
+  ui: UiPatchResult | null;
+  restart_pending: boolean;
+}
+
 export interface PluginStatus {
   version: string;
   board: string;
@@ -90,6 +108,10 @@ export const FIX_LABELS: Record<FixId, { title: string; description: string }> =
   gyro: {
     title: "Gyro Fix",
     description: "Fixes the gyro turning the wrong way in Steam Input.",
+  },
+  gamepad_layout: {
+    title: "Gamepad Layout Fix",
+    description: "Removes the trackpads, touch sticks and lower rear buttons (L5/R5) the Ally does not have from Steam Input.",
   },
 };
 

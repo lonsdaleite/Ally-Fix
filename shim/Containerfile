@@ -1,0 +1,2 @@
+FROM docker.io/library/debian:trixie-slim
+RUN apt-get update && apt-get install -y --no-install-recommends gcc-multilib && rm -rf /var/lib/apt/lists/*

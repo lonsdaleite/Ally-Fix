@@ -7,7 +7,8 @@ Layout (settings.json):
   "vibration": {"enabled": false, "left": 50, "right": 50, "linked": true,
                 "enhanced": false, "mirror_triggers": false},
   "fan":       {"enabled": false, "curves": {"performance": {...}}},
-  "gyro":      {"enabled": false, "mode": "simple"}   # plus bookkeeping for steam_dev.cfg
+  "gyro":      {"enabled": false, "mode": "simple"},  # plus bookkeeping for steam_dev.cfg
+  "gamepad_layout": {"enabled": false}
 }
 """
 
@@ -23,6 +24,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "vibration": {"enabled": False, "left": 50, "right": 50, "linked": True, "enhanced": False, "mirror_triggers": False},
     "fan": {"enabled": False, "curves": {}},
     "gyro": {"enabled": False, "mode": "simple"},
+    "gamepad_layout": {"enabled": False},
 }
 
 _manager: SettingsManager | None = None

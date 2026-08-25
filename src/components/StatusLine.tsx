@@ -6,6 +6,7 @@ const COLORS: Record<FixStatus["state"], string> = {
   not_applied: "#9ca3af",
   not_supported: "#6b7280",
   stale: "#fbbf24",
+  restart_pending: "#fbbf24",
   error: "#f87171",
 };
 
@@ -14,6 +15,7 @@ const LABELS: Record<FixStatus["state"], string> = {
   not_applied: "Not applied",
   not_supported: "Not supported",
   stale: "Needs update",
+  restart_pending: "Restart Steam",
   error: "Error",
 };
 

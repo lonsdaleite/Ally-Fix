@@ -60,7 +60,7 @@ export function GyroExtras({
       if (!res.ok) {
         toaster.toast({ title: "Gyro Fix", body: res.error || "Mode change failed" });
       } else if (restart) {
-        restartSteam();
+        void restartSteam();
       }
     } catch (e) {
       setMode(options.mode);

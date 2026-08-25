@@ -1,10 +1,12 @@
 """Ally Fix — Decky Loader plugin backend.
 
 One-click fixes for the ROG Xbox Ally X on SteamOS. All background logic runs
-inside this process (asyncio); the only files written outside the plugin
-directory are the InputPlumber override for the Gyro Fix and, in its Complex
-mode, one line in Steam's steam_dev.cfg. The rumble packet filter (HID-BPF)
-lives in the kernel only as long as this process does.
+inside this process (asyncio); the files written outside the plugin directory
+are the InputPlumber override for the Gyro Fix (plus, in its Complex mode, one
+line in Steam's steam_dev.cfg) and, for the Gamepad Layout Fix, an LD_PRELOAD
+shim in the user's ~/.local/lib with a drop-in of steam-launcher.service that
+loads it. The rumble packet filter (HID-BPF) lives in the kernel only as long
+as this process does.
 """
 
 import asyncio
@@ -18,6 +20,7 @@ sys.path.insert(0, os.path.join(decky.DECKY_PLUGIN_DIR, "py_modules"))
 
 from allyfix import registry  # noqa: E402
 from allyfix import settings as cfg  # noqa: E402
+from allyfix import steam  # noqa: E402
 from allyfix import updater  # noqa: E402
 from allyfix.resume import ResumeDetector  # noqa: E402
 from allyfix.uevent import UeventMonitor  # noqa: E402
@@ -153,6 +156,21 @@ class Plugin:
         await fix.reapply_if_enabled()
         st = await registry.status_of(fix)
         return {"ok": st.state != "error", "error": st.message, "status": st.to_dict()}
+
+    async def report_gamepad_layout_ui(self, result: dict | None) -> dict:
+        """The frontend applies the UI half of the Gamepad Layout Fix (Steam's button
+        metadata lives in its JS bundle) and reports how that went."""
+        fix = self.fixes["gamepad_layout"]
+        fix.report_ui(result)  # type: ignore[attr-defined]
+        st = await registry.status_of(fix)
+        await self._emit_fix_status(st)
+        return {"ok": st.state != "error", "error": st.message, "status": st.to_dict()}
+
+    async def restart_steam(self) -> dict:
+        """Restart the Steam client with a fresh environment (gaming mode: the user
+        service). Every fix that needs Steam restarted goes through here, so one restart
+        covers all of them."""
+        return await steam.restart()
 
     async def cpu_cap_refresh_now(self) -> dict:
         fix = self.fixes["cpu_boost"]

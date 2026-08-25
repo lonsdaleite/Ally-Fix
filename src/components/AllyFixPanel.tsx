@@ -3,8 +3,6 @@ import { useQuickAccessVisible } from "@decky/api";
 import { useEffect, useState } from "react";
 import { store, usePluginStatus } from "../store";
 import { GYRO_MODES } from "../types";
-import { confirm, gyroNeedsSteamRestart, RESTART_TEXT } from "../steamRestart";
-import type { Decision } from "./FixCard";
 import { CpuBoostExtras } from "./CpuBoostExtras";
 import { EnhancedVibrationRow, TriggerMirrorRow } from "./VibrationToggleRows";
 import { FanExtras } from "./FanExtras";
@@ -50,17 +48,6 @@ export function AllyFixPanel() {
   const fanExtra = (f.fan.details as { profile?: string }).profile;
   const cpuExtra = f.cpu_boost.enabled && !status.options.cpu_boost.refresh_on_charger ? "charger refresh off" : undefined;
   const gyroExtra = GYRO_MODES.find((m) => m.data === status.options.gyro.mode)?.label;
-  // Ask before touching anything when the toggle adds or removes the steam_dev.cfg line.
-  const gyroGuard = async (enabled: boolean): Promise<Decision> => {
-    const cur = store.get();
-    if (!cur || !gyroNeedsSteamRestart(cur, enabled, cur.options.gyro.mode)) return "ok";
-    const d = await confirm({
-      title: enabled ? "Turn Gyro Fix on?" : "Turn Gyro Fix off?",
-      description: RESTART_TEXT,
-      ok: "Apply and restart Steam",
-    });
-    return d === "ok" ? "ok-restart" : "cancel";
-  };
 
   return (
     <>
@@ -102,9 +89,10 @@ export function AllyFixPanel() {
       <FixCard id="fan" status={f.fan} extra={fanExtra}>
         <FanExtras status={f.fan} />
       </FixCard>
-      <FixCard id="gyro" status={f.gyro} extra={gyroExtra} guard={gyroGuard} locked={gyroBusy} onBusy={setGyroBusy}>
+      <FixCard id="gyro" status={f.gyro} extra={gyroExtra} locked={gyroBusy} onBusy={setGyroBusy}>
         <GyroExtras options={status.options.gyro} status={f.gyro} locked={gyroBusy} onBusy={setGyroBusy} />
       </FixCard>
+      <FixCard id="gamepad_layout" status={f.gamepad_layout} />
       <UpdateRow version={status.version} device={status.product || status.board} />
     </>
   );

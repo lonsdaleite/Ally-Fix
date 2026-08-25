@@ -6,6 +6,7 @@ import type {
   GyroOptions,
   PluginStatus,
   SimpleResult,
+  UiPatchResult,
   UpdateInfo,
   VibrationOptions,
 } from "./types";
@@ -21,5 +22,7 @@ export const setTriggerMirror = callable<[enabled: boolean], ActionResult>("set_
 export const testVibration = callable<[duration_ms: number], SimpleResult>("test_vibration");
 export const setGyroOptions = callable<[opts: Partial<GyroOptions>], ActionResult>("set_gyro_options");
 export const fanRestoreFactoryCurve = callable<[], ActionResult>("fan_restore_factory_curve");
+export const reportGamepadLayoutUi = callable<[result: UiPatchResult | null], ActionResult>("report_gamepad_layout_ui");
+export const restartSteamService = callable<[], SimpleResult>("restart_steam");
 export const checkUpdate = callable<[], UpdateInfo>("check_update");
 export const installUpdate = callable<[zip_url: string], SimpleResult>("install_update");

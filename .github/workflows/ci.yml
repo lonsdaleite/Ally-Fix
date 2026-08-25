@@ -17,5 +17,7 @@ jobs:
             -v "$PWD:/plugin" -v "$PWD/out:/out" ghcr.io/steamdeckhomebrew/builder:latest
           test -f out/dist/index.js
           test -f bin/ally_ff.bpf.o
+          test -f bin/liballycaps.so
+          test -f bin/liballycaps64.so
       - name: Check Python syntax
         run: python3 -m py_compile main.py $(find py_modules -name '*.py')
