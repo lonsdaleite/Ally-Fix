@@ -228,6 +228,8 @@ class GamepadLayoutFix(Fix):
             elif ui is not None and not ui.get("ok"):
                 st.state = "error"
                 st.message = f"UI patch failed: {ui.get('error') or ui.get('stage') or 'unknown'}"
+            elif ui is not None and ui.get("art") not in (None, "ok"):
+                st.message = f"controller picture not applied: {ui.get('art')}"
         elif not self.enabled and loaded:
             st.state = "restart_pending"
             st.message = "Restart Steam to finish turning the fix off"

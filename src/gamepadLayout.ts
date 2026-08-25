@@ -17,6 +17,7 @@
  * only clamped once they hold. Any failure leaves the client stock (four rear buttons).
  */
 import { reportGamepadLayoutUi } from "./api";
+import { applyControllerArt, revertControllerArt } from "./controllerArt";
 import { store } from "./store";
 import type { GamepadLayoutDetails, UiPatchResult } from "./types";
 
@@ -162,7 +163,10 @@ export function applyLayoutPatch(): UiPatchResult {
   clampList(cstore.m_unboundControllerList);
 
   const caps = (cstore.m_controllerList ?? []).filter(isAlly).map((c: any) => "0x" + c.unCapabilities.toString(16));
-  const result: UiPatchResult = { ok: true, module: found.moduleId, wrapped: Object.keys(wrapped), caps };
+  // The picture rides along: its failure only shows in the details, never fails the fix.
+  let art = "skipped";
+  try { art = applyControllerArt(r); } catch (e) { art = `failed: ${e}`; }
+  const result: UiPatchResult = { ok: true, module: found.moduleId, wrapped: Object.keys(wrapped), caps, art };
   window.__allyFixLayout = { byId, orig, store: cstore, wrapped, result };
   return result;
 }
@@ -170,6 +174,7 @@ export function applyLayoutPatch(): UiPatchResult {
 export function revertLayoutPatch(): boolean {
   const p = window.__allyFixLayout;
   if (!p) return false;
+  revertControllerArt();
   restore(p.byId, p.orig);
   for (const [name, fn] of Object.entries(p.wrapped)) {
     // the original lives on the prototype; deleting the own property uncovers it

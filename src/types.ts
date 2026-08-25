@@ -56,6 +56,7 @@ export interface UiPatchResult {
   module?: string;
   wrapped?: string[];
   caps?: string[];
+  art?: string; // "ok" or why the controller picture stayed stock
 }
 
 export interface GamepadLayoutDetails {
