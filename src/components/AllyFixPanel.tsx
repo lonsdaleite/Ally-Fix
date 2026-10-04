@@ -93,6 +93,7 @@ export function AllyFixPanel() {
         <GyroExtras options={status.options.gyro} status={f.gyro} locked={gyroBusy} onBusy={setGyroBusy} />
       </FixCard>
       <FixCard id="gamepad_layout" status={f.gamepad_layout} />
+      <FixCard id="stick_lights" status={f.stick_lights} />
       <UpdateRow version={status.version} device={status.product || status.board} />
     </>
   );

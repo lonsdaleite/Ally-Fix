@@ -4,11 +4,11 @@ import { useState } from "react";
 import { fixAll } from "../api";
 import { confirm, RESTART_RULES, restartSteam } from "../steamRestart";
 import { store } from "../store";
-import { FIX_IDS, FIX_LABELS, type FixId, type PluginStatus } from "../types";
+import { FIX_ALL_IDS, FIX_LABELS, type FixId, type PluginStatus } from "../types";
 
 export function FixAllButton({ status }: { status: PluginStatus }) {
   const [busy, setBusy] = useState(false);
-  const supported = FIX_IDS.filter((id) => status.fixes[id]?.supported);
+  const supported = FIX_ALL_IDS.filter((id) => status.fixes[id]?.supported);
   const fixesOn = supported.length > 0 && supported.every((id) => status.fixes[id].enabled && status.fixes[id].state === "applied");
   // "Fix all" also brings the sub-settings back to their defaults, so it stays available
   // while any of them differs. The gyro mode is a choice, not a default, and is kept.
@@ -43,7 +43,7 @@ export function FixAllButton({ status }: { status: PluginStatus }) {
     try {
       const next = await fixAll(skip);
       store.set(next);
-      const applied = FIX_IDS.filter((id) => ["applied", "restart_pending"].includes(next.fixes[id]?.state)).length;
+      const applied = FIX_ALL_IDS.filter((id) => ["applied", "restart_pending"].includes(next.fixes[id]?.state)).length;
       toaster.toast({ title: "Ally Fix", body: `Applied ${applied} of ${supported.length} fixes` });
       // Restart only if at least one of those fixes actually went on.
       if (restart && restartIds.some((id) => ["applied", "restart_pending"].includes(next.fixes[id].state))) void restartSteam();

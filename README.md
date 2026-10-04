@@ -1,12 +1,12 @@
 # Ally Fix
 
 A [Decky Loader](https://decky.xyz) plugin with one-click fixes for the **ROG Xbox Ally X** on SteamOS.
-Every fix is a single toggle; **Fix all** at the top turns them all on. Everything runs inside the
-plugin process — no services, udev rules or keep-lists are installed. The files written outside
-the plugin directory are the InputPlumber override used by the Gyro Fix and the small Steam-client
-shim of the Gamepad Layout Fix (in `~/.local/lib`, loaded through a drop-in of Steam's own
-`steam-launcher.service`); the rumble packet filter is a HID-BPF program that exists in the kernel
-only while the plugin runs.
+Every fix is a single toggle; **Fix all** at the top turns them all on (except the Stick Light Fix,
+which is a preference). Everything runs inside the plugin process — no services, udev rules or
+keep-lists are installed. The files written outside the plugin directory are the InputPlumber
+override used by the Gyro Fix and the small Steam-client shim of the Gamepad Layout Fix (in
+`~/.local/lib`, loaded through a drop-in of Steam's own `steam-launcher.service`); the rumble packet
+filter is a HID-BPF program that exists in the kernel only while the plugin runs.
 
 | Fix | What it does |
 |---|---|
@@ -15,6 +15,7 @@ only while the plugin runs.
 | **Fan Noise Fix** | Occasionally after resume both fans get stuck at maximum. The fix pins the fan curve (`pwm*_enable=1`), which brings the EC back. It does **not** invent a curve: for each thermal profile it pins the curve that profile already uses (the factory one, loaded via `pwm_enable=3`), remembers it per profile, and re-pins within 5 s after Steam switches profiles (the kernel resets `pwm_enable` on every switch). If another tool writes a curve while pinned, that curve is adopted. *Restore factory curve for this profile* discards an adopted curve. Failsafe: fans above 6000 rpm while the CPU is below 65 °C trigger a re-pin. |
 | **Gyro Fix** | Steam Input reads the gyro axes wrong for the product id InputPlumber's `deck-uhid` target emulates for the Ally: it treats the controller as a handheld and tilts the IMU frame, and its two gyro code paths (the modern gyro-to-joystick/mouse modes and the legacy `Camera` action used by Valve's Source layouts — Portal 2, Half-Life 2) disagree on how. The fix writes `/etc/inputplumber/devices.d/50-rog_xbox_ally.yaml`, generated from the installed stock config, then restarts InputPlumber. Three modes in *Settings*: **Simple** (default) — mount-matrix `y` row negated; gyro right in regular games, Yaw and Roll stay swapped in Source games. **Complex** — `gyro_force_handheld_orientation 2` in Steam's `steam_dev.cfg` plus `y`/`z` rows swapped; gyro right everywhere. Steam reads that file only at start-up, so every change into or out of this mode first asks for confirmation and, once confirmed, applies the change and restarts Steam; declining leaves everything as it was. **Deck Emulation** — the composite device is renamed so InputPlumber emulates the generic Steam Controller id with the stock matrix; gyro right everywhere, but Steam sees a different controller and layouts saved for the ROG Ally no longer apply. *Fix all* keeps the selected mode and, when that mode needs a Steam restart, asks whether to restart or to skip the Gyro Fix. The override is stamped with the stock file's hash: after an InputPlumber update it shows *Needs update* and is regenerated automatically. Works only with the `deck-uhid` target (SteamOS selects it itself); a DualSense (`ds5`) target gets inverted yaw (Simple) or swapped axes (Complex) while the fix is on. |
 | **Gamepad Layout Fix** | Steam Input takes the Ally for a controller with trackpads, touch-sensitive sticks and four rear buttons: the capability mask it builds for the product id InputPlumber's `deck-uhid` target emulates comes from a constant in `steamclient.so`. Trackpads and touch sticks then appear in every layout, and the rear buttons come as two pairs of which only L4/R4 are physical. The fix has two parts. A small LD_PRELOAD shim for the Steam client process (`bin/liballycaps.so`, hooked in through a drop-in of the `steam-launcher.service` user unit) patches that constant in memory, clearing the trackpad and touch-stick bits; this changes what Steam *thinks* the controller is, so templates and defaults (the gyro activator, for one) stop pointing at a trackpad. The lower rear pair (L5/R5) cannot be removed by the mask alone — Steam gates the whole rear-button section on it — so the plugin's frontend edits Steam's button metadata by entry id and clears the grips bit on the controller objects; that part is checked after applying and rolled back unless exactly the upper pair remains. The controller picture in Steam's controller settings — stock Steam has no rule for the Ally and draws the original Steam Controller with two trackpads — is replaced by the handheld outline Steam itself uses on the game-launch screen (its Legion Go S drawing: same layout, no trackpads, a different body), rendered from Steam's own component at runtime, so no artwork ships with the plugin. Steam picks the shim up only when it starts, so turning the fix on or off asks for a Steam restart — the same restart the Gyro Fix's Complex mode uses, and *Fix all* does a single one for both. Both parts fail towards stock: if a Steam update moves things, the panel shows an error and the client shows its usual four buttons and trackpads. Bindings stored on L5/R5 in existing layouts stay in the config but are not shown, and Steam's quick *Enable Back Buttons* action still writes to all four (harmless: the lower two do not exist). The drop-in repeats whatever `LD_PRELOAD` the other drop-ins of the service set at the time it is written; if those change later, the card shows *Enabled, but not applied* until the plugin next starts and regenerates it. Gaming mode only (in desktop mode Steam is not started through the service). Works in the Gyro Fix's Deck Emulation mode as well (the generic handheld id gets the same treatment). |
+| **Stick Light Fix** | Keeps the RGB rings around the sticks off. Whenever the `hid_asus_ally` driver initialises the controller it forces the controller's base brightness to a visible level, so the rings light up in its stored colour (blue) — at boot, and after every resume: the kernel sets `mcu_powersave=1` at boot, so the controller loses power in sleep and is re-initialised a few seconds after wake. The fix writes a static blue (`multi_intensity`) at `brightness` 0 to the LED device (`/sys/class/leds/ally:rgb:joystick_rings`) when the plugin starts and when that device re-appears; after resume it repeats the write every 0.3 s for 10 s (plus at ~12 s and ~15 s), so the rings go dark again within a fraction of a second of the controller coming back. A short flash after wake, and the light at boot until Decky starts, remain; only keeping the controller powered in sleep (`mcu_powersave=0`, more sleep drain) avoids the flash, and the fix leaves that setting alone. Not part of *Fix all*. Turning it off sets full brightness. |
 
 Verified on the ROG Xbox Ally X only (board `RC73XA`, SteamOS, kernel 6.16). The ROG Xbox Ally
 (`RC73YA`) shares the drivers and the InputPlumber config and is expected to work, but has not been
@@ -63,8 +64,9 @@ Add `PURGE=1` before `bash` to also delete the plugin's settings and logs.
 - Settings live in `~/homebrew/settings/Ally Fix/settings.json`; logs in `~/homebrew/logs/Ally Fix/`.
 - Uninstalling the plugin through Decky reverts every enabled fix (boost on, vibration 100/100, fan
   curve back to auto, InputPlumber override and the `steam_dev.cfg` line removed, the Steam-client
-  shim and its drop-in removed, Enhanced Vibration off). This runs inside the plugin process, so it
-  cannot happen if the plugin was disabled or not running at the time — use `uninstall.sh` then.
+  shim and its drop-in removed, Enhanced Vibration off, stick lights back to full brightness). This
+  runs inside the plugin process, so it cannot happen if the plugin was disabled or not running at
+  the time — use `uninstall.sh` then.
 - Steam restarts requested by the plugin (Gyro Fix Complex mode, Gamepad Layout Fix) restart
   `steam-launcher.service`, so the client comes back with a fresh environment; Steam's own restart
   keeps the old one and is only used in desktop mode.
@@ -98,3 +100,27 @@ and runs the offline test stand; commit the result.
 ## License
 
 MIT
+
+## Fork info
+
+This is a fork of [lonsdaleite/Ally-Fix](https://github.com/lonsdaleite/Ally-Fix). On top of
+upstream it adds the **Stick Light Fix** (see the table above).
+
+Install this fork (latest release of `leooon12/Ally-Fix`, asks for sudo):
+
+```
+curl -fsSL https://raw.githubusercontent.com/leooon12/Ally-Fix/main/install.sh | REPO=leooon12/Ally-Fix bash
+```
+
+Pin a release with `VERSION`, e.g. `… | REPO=leooon12/Ally-Fix VERSION=v1.4.0 bash`. Or download the
+zip from this fork's releases and use *Decky → Settings → Developer → Install Plugin from ZIP*.
+
+Uninstall (same as upstream; add `PURGE=1` before `bash` to also delete settings and logs):
+
+```
+curl -fsSL https://raw.githubusercontent.com/leooon12/Ally-Fix/main/uninstall.sh | bash
+```
+
+The *Updates* section in the panel still checks upstream releases: installing an update from there
+replaces this fork with upstream (which has no Stick Light Fix). Re-run the install command above
+to get the fork back.

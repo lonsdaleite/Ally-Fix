@@ -130,11 +130,12 @@ class Plugin:
 
     async def fix_all(self, skip: list | None = None) -> dict:
         """Enable every supported fix except the ids in `skip` (the UI skips the Gyro Fix
-        when the user declines the Steam restart its Complex mode needs)."""
+        when the user declines the Steam restart its Complex mode needs) and the
+        preference toggles in registry.FIX_ALL_EXCLUDE."""
         if not registry.device_supported():
             decky.logger.warning("fix_all refused: unsupported device %s", registry.dmi_board())
             return await self.get_status()
-        skipped = set(skip or [])
+        skipped = set(skip or []) | set(registry.FIX_ALL_EXCLUDE)
         for fid in registry.FIX_ORDER:
             fix = self.fixes[fid]
             if fid in skipped:

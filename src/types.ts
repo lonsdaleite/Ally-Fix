@@ -1,5 +1,7 @@
-export type FixId = "cpu_boost" | "vibration" | "fan" | "gyro" | "gamepad_layout";
-export const FIX_IDS: FixId[] = ["cpu_boost", "vibration", "fan", "gyro", "gamepad_layout"];
+export type FixId = "cpu_boost" | "vibration" | "fan" | "gyro" | "gamepad_layout" | "stick_lights";
+export const FIX_IDS: FixId[] = ["cpu_boost", "vibration", "fan", "gyro", "gamepad_layout", "stick_lights"];
+/** The fixes "Fix all" turns on: the Stick Light Fix is a preference and stays manual. */
+export const FIX_ALL_IDS: FixId[] = FIX_IDS.filter((id) => id !== "stick_lights");
 
 export type FixState = "applied" | "not_applied" | "not_supported" | "error" | "stale" | "restart_pending";
 
@@ -113,6 +115,10 @@ export const FIX_LABELS: Record<FixId, { title: string; description: string }> =
   gamepad_layout: {
     title: "Gamepad Layout Fix",
     description: "Removes the trackpads, touch sticks and lower rear buttons (L5/R5) the Ally does not have from Steam Input.",
+  },
+  stick_lights: {
+    title: "Stick Light Fix",
+    description: "Keeps the stick lights off after reboot and sleep.",
   },
 };
 

@@ -8,7 +8,8 @@ Layout (settings.json):
                 "enhanced": false, "mirror_triggers": false},
   "fan":       {"enabled": false, "curves": {"performance": {...}}},
   "gyro":      {"enabled": false, "mode": "simple"},  # plus bookkeeping for steam_dev.cfg
-  "gamepad_layout": {"enabled": false}
+  "gamepad_layout": {"enabled": false},
+  "stick_lights": {"enabled": false}
 }
 """
 
@@ -25,6 +26,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "fan": {"enabled": False, "curves": {}},
     "gyro": {"enabled": False, "mode": "simple"},
     "gamepad_layout": {"enabled": False},
+    "stick_lights": {"enabled": False},
 }
 
 _manager: SettingsManager | None = None

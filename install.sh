@@ -1,10 +1,10 @@
 #!/bin/bash
 # Ally Fix installer: downloads the latest GitHub release and installs it into Decky Loader.
 #   curl -fsSL https://raw.githubusercontent.com/lonsdaleite/Ally-Fix/main/install.sh | bash
-# Optional: VERSION=v1.0.0 to pin a release.
+# Optional: VERSION=v1.0.0 to pin a release, REPO=owner/Ally-Fix to install from a fork.
 set -euo pipefail
 
-REPO="lonsdaleite/Ally-Fix"
+REPO="${REPO:-lonsdaleite/Ally-Fix}"
 PLUGIN_NAME="Ally Fix"
 HOMEBREW="${HOMEBREW_DIR:-$HOME/homebrew}"
 DEST="$HOMEBREW/plugins/$PLUGIN_NAME"

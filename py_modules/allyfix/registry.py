@@ -12,15 +12,18 @@ from .fixes.cpu_boost import CpuBoostFix
 from .fixes.fan import FanFix
 from .fixes.gamepad_layout import GamepadLayoutFix
 from .fixes.gyro import GyroFix
+from .fixes.stick_lights import StickLightsFix
 from .fixes.vibration import VibrationFix
 from .sysfs import dmi_board, dmi_product
 
-FIX_ORDER = ("cpu_boost", "vibration", "fan", "gyro", "gamepad_layout")
+FIX_ORDER = ("cpu_boost", "vibration", "fan", "gyro", "gamepad_layout", "stick_lights")
+# Preferences rather than fixes: never turned on by "Fix all".
+FIX_ALL_EXCLUDE = ("stick_lights",)
 
 
 def build() -> dict[str, Fix]:
     fixes: dict[str, Fix] = {}
-    for cls in (CpuBoostFix, VibrationFix, FanFix, GyroFix, GamepadLayoutFix):
+    for cls in (CpuBoostFix, VibrationFix, FanFix, GyroFix, GamepadLayoutFix, StickLightsFix):
         fix = cls()
         fixes[fix.id] = fix
     return fixes
