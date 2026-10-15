@@ -1,7 +1,8 @@
 #!/bin/bash
 # Ally Fix uninstaller: removes the plugin and reverts every fix, including the InputPlumber
 # override the Gyro Fix writes to /etc, its line in Steam's steam_dev.cfg, and the Steam-client
-# shim plus service drop-in of the Gamepad Layout Fix (the things that survive a reboot).
+# shim, service drop-in and InputPlumber paddle map of the Gamepad Layout Fix (the things that
+# survive a reboot).
 #   curl -fsSL https://raw.githubusercontent.com/lonsdaleite/Ally-Fix/main/uninstall.sh | bash
 # Optional: PURGE=1 also removes the plugin's settings and logs.
 set -euo pipefail
@@ -10,6 +11,7 @@ PLUGIN_NAME="Ally Fix"
 HOMEBREW="${HOMEBREW_DIR:-$HOME/homebrew}"
 OVERRIDE="/etc/inputplumber/devices.d/50-rog_xbox_ally.yaml"
 MARKER="managed-by: ally-fix"
+PADDLE_MAP="/etc/inputplumber/capability_maps.d/ally_type2.yaml"
 STEAM_CFG="$HOME/.local/share/Steam/steam_dev.cfg"
 LAYOUT_DROPIN="$HOME/.config/systemd/user/steam-launcher.service.d/zz-ally-fix-gamepad-layout.conf"
 LAYOUT_LIB_DIR="$HOME/.local/lib/ally-fix"
@@ -40,7 +42,7 @@ if [ -f "$LAYOUT_DROPIN" ] || [ -d "$LAYOUT_LIB_DIR" ]; then
   systemctl --user daemon-reload 2>/dev/null || true
   echo "  - Steam-client shim and service drop-in removed (takes effect after Steam restarts)"
 fi
-sudo env PURGE="${PURGE:-0}" HOMEBREW="$HOMEBREW" SHIM_LOG="$SHIM_LOG" OVERRIDE="$OVERRIDE" MARKER="$MARKER" PLUGIN_NAME="$PLUGIN_NAME" bash <<'ROOT'
+sudo env PURGE="${PURGE:-0}" HOMEBREW="$HOMEBREW" SHIM_LOG="$SHIM_LOG" OVERRIDE="$OVERRIDE" MARKER="$MARKER" PADDLE_MAP="$PADDLE_MAP" PLUGIN_NAME="$PLUGIN_NAME" bash <<'ROOT'
 set -u
 plugin_dir="$HOMEBREW/plugins/$PLUGIN_NAME"
 if [ -d "$plugin_dir" ]; then
@@ -84,15 +86,22 @@ for d in /sys/class/hwmon/hwmon*; do
     echo "  - fan curve back to factory auto"
   fi
 done
-# Gyro Fix -> remove the InputPlumber override
-if [ -f "$OVERRIDE" ]; then
-  if grep -q "$MARKER" "$OVERRIDE"; then
-    rm -f "$OVERRIDE"
-    systemctl restart inputplumber 2>/dev/null || true
-    echo "  - InputPlumber override removed, inputplumber restarted"
+# Gyro Fix -> remove the InputPlumber device override;
+# Gamepad Layout Fix -> remove the InputPlumber paddle map override
+ip_changed=0
+for f in "$OVERRIDE" "$PADDLE_MAP"; do
+  [ -f "$f" ] || continue
+  if grep -q "$MARKER" "$f"; then
+    rm -f "$f"
+    ip_changed=1
+    echo "  - $f removed"
   else
-    echo "  ! $OVERRIDE exists but was not created by Ally Fix — left in place" >&2
+    echo "  ! $f exists but was not created by Ally Fix — left in place" >&2
   fi
+done
+if [ "$ip_changed" = 1 ]; then
+  systemctl restart inputplumber 2>/dev/null || true
+  echo "  - inputplumber restarted"
 fi
 
 if [ "$PURGE" = 1 ]; then

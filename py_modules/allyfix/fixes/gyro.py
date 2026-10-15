@@ -27,7 +27,6 @@ inverted yaw (simple) or swapped axes (complex) while the fix is on.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import os
 import re
 import shutil
@@ -36,6 +35,7 @@ from typing import Any
 
 import decky
 
+from .. import inputplumber
 from .. import settings as cfg
 from ..base import Fix
 from ..device import SUPPORTED_BOARDS
@@ -64,11 +64,6 @@ _HASH_LINE = re.compile(r"^# stock-sha256:\s*([0-9a-f]{64})\s*$", re.M)
 DBUS_DEST = "org.shadowblip.InputPlumber"
 COMPOSITE_IFACE = "org.shadowblip.Input.CompositeDevice"
 _COMPOSITE_RE = re.compile(r"^/org/shadowblip/InputPlumber/CompositeDevice\d+$", re.M)
-
-
-def _sha256(path: str) -> str:
-    with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
 
 
 def _patch(stock_text: str, mode: str) -> str:
@@ -181,7 +176,7 @@ class GyroFix(Fix):
                 pass
             return "foreign"
         m = _HASH_LINE.search(text)
-        if not m or m.group(1) != _sha256(STOCK):
+        if not m or m.group(1) != inputplumber.sha256(STOCK):
             return "stale"
         try:
             with open(STOCK, "r", encoding="utf-8") as f:
@@ -327,10 +322,7 @@ class GyroFix(Fix):
         return types
 
     async def _restart_inputplumber(self) -> None:
-        code, out = await _run("systemctl", "restart", "inputplumber")
-        if code != 0:
-            raise RuntimeError(f"systemctl restart inputplumber failed ({code}): {out}")
-        decky.logger.info("[gyro] inputplumber restarted")
+        await inputplumber.restart("gyro")
 
     # --- Fix interface ---------------------------------------------------
     def supported(self) -> tuple[bool, str]:
@@ -375,7 +367,7 @@ class GyroFix(Fix):
             # reports it; persist it so it survives the override being rewritten.
             decky.logger.info("[gyro] adopting mode %s from the existing override", self.mode)
             cfg.set(self.id, "mode", self.mode)
-        stock_hash = _sha256(STOCK)
+        stock_hash = inputplumber.sha256(STOCK)
         with open(STOCK, "r", encoding="utf-8") as f:
             stock_text = f.read()
         try:

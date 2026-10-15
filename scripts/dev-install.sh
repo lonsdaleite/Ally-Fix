@@ -8,6 +8,19 @@ DEST="/home/deck/homebrew/plugins/$NAME"
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
 [ -f "$SRC/dist/index.js" ] || { echo "dist/index.js missing — build first"; exit 1; }
 systemctl stop plugin_loader
+# The unit has KillMode=process: stop ends only the launcher, and the loader itself (with the
+# plugin processes it spawned) can outlive it and keep 127.0.0.1:1337, so the next start fails
+# to bind and systemd restarts it in a loop. Finish them off before starting again.
+loaders="$(pgrep -f '^Decky Loader v' || true)"
+for pid in $loaders; do
+  pkill -TERM -P "$pid" 2>/dev/null || true
+  kill -TERM "$pid" 2>/dev/null || true
+done
+for _ in $(seq 1 20); do
+  pgrep -f '^Decky Loader v' >/dev/null || break
+  sleep 0.5
+done
+pkill -KILL -f '^Decky Loader v' 2>/dev/null || true
 rm -rf "$DEST"
 mkdir -p "$DEST"
 cp -r "$SRC/dist" "$SRC/bin" "$SRC/py_modules" "$SRC/main.py" "$SRC/plugin.json" "$SRC/package.json" "$SRC/LICENSE" "$SRC/README.md" "$DEST/"

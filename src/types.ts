@@ -61,6 +61,8 @@ export interface UiPatchResult {
 
 export interface GamepadLayoutDetails {
   native_ready: boolean; // shim copy and service drop-in are in place
+  inputplumber: string | null; // installed InputPlumber version
+  paddle_map: "absent" | "current" | "missing" | "leftover" | "foreign"; // rear-button map override (InputPlumber 0.78.x)
   shim_active: boolean; // the native shim is loaded in the running Steam client
   shim_patched: boolean | null;
   ui: UiPatchResult | null;
