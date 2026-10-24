@@ -86,13 +86,13 @@ export function AllyFixPanel() {
       >
         <VibrationExtras options={vib} status={f.vibration} />
       </FixCard>
-      <FixCard id="fan" status={f.fan} extra={fanExtra}>
-        <FanExtras status={f.fan} />
-      </FixCard>
       <FixCard id="gyro" status={f.gyro} extra={gyroExtra} locked={gyroBusy} onBusy={setGyroBusy}>
         <GyroExtras options={status.options.gyro} status={f.gyro} locked={gyroBusy} onBusy={setGyroBusy} />
       </FixCard>
       <FixCard id="gamepad_layout" status={f.gamepad_layout} />
+      <FixCard id="fan" status={f.fan} extra={fanExtra}>
+        <FanExtras status={f.fan} />
+      </FixCard>
       <UpdateRow version={status.version} device={status.product || status.board} />
     </>
   );

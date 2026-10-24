@@ -16,6 +16,11 @@ does not touch the points, only pwm_enable; pwm_enable=3 loads the factory
 curve of the *current* throttle_thermal_policy and leaves enable=2;
 platform_profile reads "custom" after any curve operation, so the current
 profile is read from throttle_thermal_policy.
+
+SteamOS 3.9.2+ kernels work around the same firmware bug in asus-wmi: on
+RC73XA only, the factory curve is pinned for suspend and released ~3 s after
+resume. There the fix is not needed: it cannot be turned on, Fix all skips it,
+and an install that had it on is switched off at plugin start.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ import decky
 
 from .. import settings as cfg
 from ..base import Fix, cancel_task
-from ..sysfs import find_hwmon, read_int, read_str, write_str
+from ..sysfs import dmi_board, find_hwmon, read_int, read_str, write_str
 
 TTP_PATH = "/sys/devices/platform/asus-nb-wmi/throttle_thermal_policy"
 PROFILE_NAMES = {0: "balanced", 1: "performance", 2: "low-power"}
@@ -38,6 +43,9 @@ RPM_FAILSAFE = 6000
 FAILSAFE_MAX_TEMP_C = 65.0  # above this, >6000 rpm is legitimate load, not a stuck EC
 WATCHDOG_PERIOD_S = 5.0
 RESUME_SETTLE_S = 3.0
+# The kernel workaround: no sysfs knob, its presence is told by its symbol in asus_wmi.
+KERNEL_PIN_SYMBOL = "asus_fan_curves_release_work"
+KERNEL_PIN_BOARDS = ("RC73XA",)  # the kernel enables it by DMI board name
 
 Curve = dict[str, list[int]]  # {"temps": [...], "pwm1": [...], "pwm2": [...]}
 
@@ -51,6 +59,26 @@ class FanFix(Fix):
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self._last_event: str = ""
+        self._kernel_pin: bool | None = None
+
+    @staticmethod
+    def _kernel_has_pin_symbol() -> bool:
+        try:
+            with open("/proc/kallsyms", "r", encoding="ascii", errors="replace") as f:
+                return any(line.split("\t", 1)[0].rstrip().endswith(" " + KERNEL_PIN_SYMBOL) for line in f)
+        except OSError:
+            return False
+
+    def kernel_pins_on_suspend(self) -> bool:
+        """Whether the running kernel pins the fan curve across suspend on this board."""
+        if self._kernel_pin is None:
+            if dmi_board() not in KERNEL_PIN_BOARDS:
+                self._kernel_pin = False
+            elif not os.path.isdir("/sys/module/asus_wmi"):
+                return False  # not loaded yet: ask again later
+            else:
+                self._kernel_pin = self._kernel_has_pin_symbol()
+        return self._kernel_pin
 
     # --- hwmon access ----------------------------------------------------
     @staticmethod
@@ -179,6 +207,17 @@ class FanFix(Fix):
         if read_int(TTP_PATH) is None:
             return False, "throttle_thermal_policy not available"
         return True, ""
+
+    def needed(self) -> tuple[bool, str]:
+        if self.kernel_pins_on_suspend():
+            return False, "SteamOS already fixes this itself."
+        return True, ""
+
+    async def migrate(self) -> None:
+        # A fix turned on before the kernel had the workaround goes off.
+        if self.enabled and self.kernel_pins_on_suspend() and self.supported()[0]:
+            await self.set_and_apply(False)
+            decky.logger.info("[fan] turned off: the kernel pins the fan curve across suspend itself")
 
     def is_applied(self) -> bool:
         en1, en2 = self._enable()

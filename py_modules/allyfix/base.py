@@ -21,6 +21,7 @@ class FixStatus:
     supported: bool
     message: str = ""
     details: dict[str, Any] = field(default_factory=dict)
+    needed: bool = True  # False: the system already fixes this; Fix all leaves it alone
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -30,6 +31,7 @@ class FixStatus:
             "supported": self.supported,
             "message": self.message,
             "details": self.details,
+            "needed": self.needed,
         }
 
 
@@ -88,6 +90,14 @@ class Fix:
     async def stop_background(self) -> None:
         """Called at plugin unload."""
 
+    def needed(self) -> tuple[bool, str]:
+        """Whether the fix is still useful here; (False, reason) when the OS already
+        does the same. A fix that is not needed cannot be turned on."""
+        return True, ""
+
+    async def migrate(self) -> None:
+        """Called once at plugin start, before enabled fixes are re-applied."""
+
     def needs_resume(self) -> bool:
         """Whether on_resume should be called for this fix."""
         return self.enabled
@@ -97,6 +107,14 @@ class Fix:
 
     # --- helpers --------------------------------------------------------
     def status(self) -> FixStatus:
+        st = self._status()
+        needed, reason = self.needed()
+        st.needed = needed
+        if not needed and not st.message:
+            st.message = reason
+        return st
+
+    def _status(self) -> FixStatus:
         ok, reason = self.supported()
         if not ok:
             return FixStatus(self.id, self.enabled, "not_supported", False, reason, self.details())
@@ -111,7 +129,7 @@ class Fix:
 
     async def set_and_apply(self, enabled: bool) -> FixStatus:
         ok, reason = self.supported()
-        if not ok:
+        if not ok or (enabled and not self.needed()[0]):
             self.last_error = ""
             return self.status()
         self.set_enabled(enabled)
@@ -127,7 +145,7 @@ class Fix:
         return self.status()
 
     async def reapply_if_enabled(self) -> None:
-        if not self.enabled or not self.supported()[0]:
+        if not self.enabled or not self.supported()[0] or not self.needed()[0]:
             return
         try:
             await self.apply()

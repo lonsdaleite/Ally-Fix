@@ -10,6 +10,7 @@ export interface FixStatus {
   supported: boolean;
   message: string;
   details: Record<string, unknown>;
+  needed: boolean; // false: the system already does this; Fix all leaves it alone
 }
 
 export interface CpuBoostOptions {

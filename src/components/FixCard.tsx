@@ -33,6 +33,8 @@ export function FixCard({
   const [rev, setRev] = useState(0);
   const { title, description } = FIX_LABELS[id];
   const busy = busyState || !!locked;
+  // Not needed (the system does it): can be switched off if it is on, never on.
+  const needed = status.needed !== false;
   const setBusy = (b: boolean) => {
     setBusyState(b);
     onBusy?.(b);
@@ -81,7 +83,7 @@ export function FixCard({
           label="Enable"
           description={description}
           checked={status.enabled}
-          disabled={busy || !status.supported}
+          disabled={busy || !status.supported || (!needed && !status.enabled)}
           onChange={onToggle}
         />
       </PanelSectionRow>
@@ -89,7 +91,7 @@ export function FixCard({
         <StatusLine status={status} extra={extra} />
       </PanelSectionRow>
       {status.supported && preSettings}
-      {children && status.supported && (
+      {children && status.supported && needed && (
         <Collapsible id={`${id}-settings`} title="Settings">
           {children}
         </Collapsible>

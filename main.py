@@ -55,6 +55,10 @@ class Plugin:
         self.resume.start()
 
         for fix in self.fixes.values():
+            try:
+                await fix.migrate()
+            except Exception:  # noqa: BLE001
+                decky.logger.exception("[%s] migrate failed", fix.id)
             await fix.reapply_if_enabled()
             try:
                 await fix.start_background()
@@ -129,8 +133,8 @@ class Plugin:
         return {"ok": st.state != "error", "error": st.message, "status": st.to_dict()}
 
     async def fix_all(self, skip: list | None = None) -> dict:
-        """Enable every supported fix except the ids in `skip` (the UI skips the Gyro Fix
-        when the user declines the Steam restart its Complex mode needs)."""
+        """Enable every supported and needed fix except the ids in `skip` (the UI skips the
+        Gyro Fix when the user declines the Steam restart its Complex mode needs)."""
         if not registry.device_supported():
             decky.logger.warning("fix_all refused: unsupported device %s", registry.dmi_board())
             return await self.get_status()
@@ -139,7 +143,7 @@ class Plugin:
             fix = self.fixes[fid]
             if fid in skipped:
                 continue
-            if fix.supported()[0]:
+            if fix.supported()[0] and fix.needed()[0]:
                 self._reset_defaults_on_enable(fix)
                 await fix.set_and_apply(True)
         return await self.get_status()

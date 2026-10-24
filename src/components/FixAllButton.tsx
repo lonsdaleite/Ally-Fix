@@ -8,7 +8,7 @@ import { FIX_IDS, FIX_LABELS, type FixId, type PluginStatus } from "../types";
 
 export function FixAllButton({ status }: { status: PluginStatus }) {
   const [busy, setBusy] = useState(false);
-  const supported = FIX_IDS.filter((id) => status.fixes[id]?.supported);
+  const supported = FIX_IDS.filter((id) => status.fixes[id]?.supported && status.fixes[id].needed !== false);
   const fixesOn = supported.length > 0 && supported.every((id) => status.fixes[id].enabled && status.fixes[id].state === "applied");
   // "Fix all" also brings the sub-settings back to their defaults, so it stays available
   // while any of them differs. The gyro mode is a choice, not a default, and is kept.

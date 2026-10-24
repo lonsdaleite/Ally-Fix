@@ -22,6 +22,7 @@ const LABELS: Record<FixStatus["state"], string> = {
 function stateText(status: FixStatus): string {
   if (status.state === "applied" && !status.enabled) return "Already in fixed state";
   if (status.state === "not_applied" && status.enabled) return "Enabled, but not applied";
+  if (status.state === "not_applied" && status.needed === false) return "Not needed";
   return LABELS[status.state];
 }
 
