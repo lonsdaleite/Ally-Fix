@@ -43,11 +43,11 @@ from ..sysfs import dmi_board
 LIB_NAME = "liballycaps.so"
 # LD_PRELOAD splits on spaces, and the plugin directory ("Ally Fix") has one.
 LIB_DIR = os.path.join(steam.HOME, ".local", "lib", "ally-fix")
-# The client is 32-bit, but LD_PRELOAD is inherited by every child of the service, most of
-# them 64-bit (steamwebhelper, games); a single 32-bit path would make each of those print
-# a "wrong ELF class" line. So the variable carries the `$LIB` token, which ld.so expands
-# to `lib32` in 32-bit processes and `lib` in 64-bit ones, and a 64-bit build of the same
-# shim (a no-op outside the `steam` process) sits at the other end.
+# LD_PRELOAD is inherited by every child of the service, 32- and 64-bit alike, and the
+# client itself is 64-bit (steamrt64) in current Steam builds and 32-bit (ubuntu12_32) in
+# older ones. So the variable carries the `$LIB` token, which ld.so expands to `lib32` in
+# 32-bit processes and `lib` in 64-bit ones, and the same shim sits at both ends, built
+# for each (a no-op outside the `steam` process).
 LIBS = {
     os.path.join(LIB_DIR, "lib32", LIB_NAME): os.path.join(decky.DECKY_PLUGIN_DIR, "bin", LIB_NAME),
     os.path.join(LIB_DIR, "lib", LIB_NAME): os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "liballycaps64.so"),
@@ -56,7 +56,9 @@ PRELOAD_ENTRY = os.path.join(LIB_DIR, "$LIB", LIB_NAME)
 LEGACY_LIB = os.path.join(LIB_DIR, LIB_NAME)  # pre-release layout: one 32-bit file, no $LIB
 DROPIN = os.path.join(steam.DROPIN_DIR, "zz-ally-fix-gamepad-layout.conf")  # sorts last: wins
 LOG = os.path.join(steam.HOME, ".local", "state", "ally-fix-allycaps.log")
-STEAMCLIENT = os.path.join(steam.HOME, ".local", "share", "Steam", "ubuntu12_32", "steamclient.so")
+STEAMCLIENTS = tuple(
+    os.path.join(steam.HOME, ".local", "share", "Steam", d, "steamclient.so") for d in ("steamrt64", "ubuntu12_32")
+)
 MASK = 0x60AFFF  # stock 0x160bfff without TRACKPAD (bit 12) and CAPJOYSTICK (bit 24)
 MARKER = "# managed by Ally Fix (Gamepad Layout Fix)"
 
@@ -185,8 +187,8 @@ class GamepadLayoutFix(Fix):
             return False, f"{steam.SERVICE} not found (SteamOS gaming mode only)"
         if not all(os.path.isfile(src) for src in LIBS.values()):
             return False, f"{LIB_NAME} missing from the plugin"
-        if not os.path.isfile(STEAMCLIENT):
-            return False, "32-bit steamclient.so not found"
+        if not any(os.path.isfile(p) for p in STEAMCLIENTS):
+            return False, "steamclient.so not found"
         return True, ""
 
     # --- drop-in ----------------------------------------------------------
@@ -282,15 +284,21 @@ class GamepadLayoutFix(Fix):
             decky.logger.info("[gamepad_layout] paddle map override written: %s", MAP_OVERRIDE)
         await inputplumber.restart("gamepad_layout")
 
-    def _shim_state(self) -> tuple[bool, bool | None]:
-        """(loaded into the running client, patched the constant) — patched is None
-        while the log has nothing for this process yet."""
+    def _shim_state(self) -> tuple[bool, bool | None, bool]:
+        """(loaded into the running client, patched the constant, stale) — patched is None
+        while the log has nothing for this process yet; stale means the client runs a copy
+        of the shim that has since been replaced on disk (plugin update), so its result
+        says nothing about the current build."""
+        # Several processes are called `steam` (the 64-bit client starts a helper of the
+        # same name); the client is the one that has steamclient.so mapped.
         pids = steam.client_pids()
-        if not pids:
-            return False, None
-        pid = pids[0]
-        if not steam.client_has_mapped(pid, "/" + LIB_NAME):
-            return False, None
+        pid = next((p for p in pids if steam.client_has_mapped(p, "/steamclient.so")), pids[0] if pids else None)
+        if pid is None:
+            return False, None, False
+        maps = steam.client_mappings(pid, "/" + LIB_NAME)
+        if not maps:
+            return False, None, False
+        stale = any(line.endswith(" (deleted)") for line in maps)
         patched: bool | None = None
         text = _read(LOG)
         if text is not None:
@@ -302,10 +310,10 @@ class GamepadLayoutFix(Fix):
                     patched = True
                 elif "NOT patching" in line or "failed" in line:
                     patched = False
-        return True, patched
+        return True, patched, stale
 
     def details(self) -> dict[str, Any]:
-        loaded, patched = self._shim_state()
+        loaded, patched, stale = self._shim_state()
         return {
             "dropin": DROPIN,
             "lib": LIB_DIR,
@@ -315,6 +323,7 @@ class GamepadLayoutFix(Fix):
             "paddle_map": self._map_state(),
             "shim_active": loaded,
             "shim_patched": patched,
+            "shim_stale": stale,
             "ui": self.ui_result,
             "restart_pending": self.enabled != loaded,
         }
@@ -330,9 +339,12 @@ class GamepadLayoutFix(Fix):
             if not loaded:
                 st.state = "restart_pending"
                 st.message = "Restart Steam to apply"
+            elif st.details.get("shim_stale"):
+                st.state = "restart_pending"
+                st.message = "Updated — restart Steam to load the new version"
             elif patched is False:
                 st.state = "error"
-                st.message = "capability constant not found in steamclient.so (Steam update?)"
+                st.message = "capability mask not found in steamclient.so (Steam update?)"
             elif ui is not None and not ui.get("ok"):
                 st.state = "error"
                 st.message = f"UI patch failed: {ui.get('error') or ui.get('stage') or 'unknown'}"

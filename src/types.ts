@@ -66,6 +66,7 @@ export interface GamepadLayoutDetails {
   paddle_map: "absent" | "current" | "missing" | "leftover" | "foreign"; // rear-button map override (InputPlumber 0.78.x)
   shim_active: boolean; // the native shim is loaded in the running Steam client
   shim_patched: boolean | null;
+  shim_stale: boolean; // the running client has a copy of the shim replaced since (plugin update)
   ui: UiPatchResult | null;
   restart_pending: boolean;
 }

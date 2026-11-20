@@ -1,4 +1,4 @@
-import { PanelSection, PanelSectionRow, ToggleField } from "@decky/ui";
+import { ButtonItem, PanelSection, PanelSectionRow, ToggleField } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { useState, type ReactNode } from "react";
 import { setFixEnabled } from "../api";
@@ -90,6 +90,13 @@ export function FixCard({
       <PanelSectionRow>
         <StatusLine status={status} extra={extra} />
       </PanelSectionRow>
+      {status.state === "restart_pending" && (
+        <PanelSectionRow>
+          <ButtonItem layout="below" disabled={busy} onClick={() => void restartSteam()}>
+            Restart Steam
+          </ButtonItem>
+        </PanelSectionRow>
+      )}
       {status.supported && preSettings}
       {children && status.supported && needed && (
         <Collapsible id={`${id}-settings`} title="Settings">

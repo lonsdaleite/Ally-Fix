@@ -31,10 +31,13 @@ export function gyroNeedsSteamRestart(status: PluginStatus, enabledAfter: boolea
   return (enabledAfter && mode === "complex") !== steamCfgPresent(status);
 }
 
-/** The native half of the layout fix lives in Steam's process: on ≠ loaded means a restart. */
+/**
+ * The native half of the layout fix lives in Steam's process: on ≠ loaded means a restart,
+ * and so does staying on while Steam still runs a copy of the shim replaced by an update.
+ */
 export function layoutNeedsSteamRestart(status: PluginStatus, enabledAfter: boolean): boolean {
   const d = status.fixes.gamepad_layout?.details as Partial<GamepadLayoutDetails> | undefined;
-  return enabledAfter !== (d?.shim_active === true);
+  return enabledAfter !== (d?.shim_active === true) || (enabledAfter && d?.shim_stale === true);
 }
 
 export const RESTART_TEXT = "Steam reads this gyro setting only when it starts. Apply the change and restart Steam now?";

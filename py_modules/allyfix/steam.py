@@ -93,6 +93,16 @@ def client_has_mapped(pid: int, needle: str) -> bool:
         return False
 
 
+def client_mappings(pid: int, needle: str) -> list[str]:
+    """Lines of /proc/<pid>/maps that contain `needle` (a file replaced on disk while
+    mapped shows up with a ` (deleted)` suffix)."""
+    try:
+        with open(f"/proc/{pid}/maps") as f:
+            return [line.rstrip("\n") for line in f if needle in line]
+    except OSError:
+        return []
+
+
 async def restart() -> dict[str, Any]:
     """Restart the client so it starts with a fresh environment. Only possible while it
     runs as the user service (gaming mode); the caller falls back to Steam's own restart."""

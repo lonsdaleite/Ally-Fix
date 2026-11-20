@@ -88,12 +88,13 @@ commit the result. At runtime it is loaded through the system `libbpf.so.1`, not
 the device.
 
 The Steam-client shim of the Gamepad Layout Fix (`shim/allycaps.c`) is shipped prebuilt as
-`bin/liballycaps.so`; it is 32-bit like the client and finds the capability constant by value, so
-it does not depend on the Steam build. `bin/liballycaps64.so` is the same source built 64-bit: the
-drop-in preloads `…/ally-fix/$LIB/liballycaps.so`, so the 64-bit children of the service
-(steamwebhelper, games) load the twin — a no-op outside the `steam` process — instead of printing
-a "wrong ELF class" line each. `shim/build.sh` (podman, Debian with `gcc-multilib`) rebuilds both
-and runs the offline test stand; commit the result.
+`bin/liballycaps64.so` (for the 64-bit client in `steamrt64/`, current Steam builds) and
+`bin/liballycaps.so` (for the 32-bit client in `ubuntu12_32/`, older builds); the drop-in preloads
+`…/ally-fix/$LIB/liballycaps.so`, so every process of the service loads the build of its own class —
+a no-op outside the `steam` process. The shim finds the capability mask by value (a `.rodata`
+constant in the 32-bit client, an instruction immediate next to the Legion Go S mask in the 64-bit
+one), so it does not depend on the exact Steam build. `shim/build.sh` (podman, Debian with
+`gcc-multilib`) rebuilds both and runs the offline test stand for each; commit the result.
 
 ## License
 
